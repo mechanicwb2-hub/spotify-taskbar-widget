@@ -1,4 +1,5 @@
-﻿using System.Globalization;
+﻿using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
@@ -47,6 +48,7 @@ public partial class MainWindow : Window
     private bool _artDirty = true;
     private bool _refreshing;
     private bool _volLoading;
+    private bool _spotifyRunning = true;
 
     // Âncoras da barra (píxeis físicos), atualizadas em background via UI Automation
     private readonly object _anchorLock = new();
@@ -76,6 +78,7 @@ public partial class MainWindow : Window
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
         AutoStartMenu.IsChecked = IsAutoStartEnabled();
+        LauncherMenu.IsChecked = _settings.ShowLauncher;
         BtnLikeMenu.IsChecked = _settings.ShowLike;
         BtnShuffleMenu.IsChecked = _settings.ShowShuffle;
         BtnPrevMenu.IsChecked = _settings.ShowPrev;
@@ -149,7 +152,8 @@ public partial class MainWindow : Window
             rightLimit = br.X - 4;
         }
 
-        ApplyResponsiveLayout(rightLimit - left);
+        if (_spotifyRunning)
+            ApplyResponsiveLayout(rightLimit - left);
 
         if (!_dragging)
         {
@@ -157,8 +161,10 @@ public partial class MainWindow : Window
             if (Math.Abs(Left - left) > 0.5) Left = left;
         }
 
-        // Esconder quando há uma app em ecrã inteiro (jogos, vídeos)
-        bool hide = Interop.IsForegroundFullscreen(_hwnd, tray);
+        // Esconder quando há uma app em ecrã inteiro (jogos, vídeos), ou quando
+        // o Spotify está fechado (a menos que o botão de abrir esteja ativado)
+        bool hide = Interop.IsForegroundFullscreen(_hwnd, tray)
+                    || (!_spotifyRunning && !_settings.ShowLauncher);
         var wanted = hide ? Visibility.Hidden : Visibility.Visible;
         if (Visibility != wanted)
         {
@@ -256,6 +262,25 @@ public partial class MainWindow : Window
         _refreshing = true;
         try
         {
+            _spotifyRunning = Process.GetProcessesByName("Spotify").Length > 0;
+
+            // Spotify fechado: ou o widget está escondido (UpdatePosition trata),
+            // ou mostra apenas o botão de abrir
+            var launcherWanted = !_spotifyRunning ? Visibility.Visible : Visibility.Collapsed;
+            var contentWanted = !_spotifyRunning ? Visibility.Collapsed : Visibility.Visible;
+            if (LauncherPanel.Visibility != launcherWanted)
+            {
+                LauncherPanel.Visibility = launcherWanted;
+                ContentPanel.Visibility = contentWanted;
+            }
+            if (!_spotifyRunning)
+            {
+                _lastTrackKey = "";
+                _liked = null;
+                VolumePopup.IsOpen = false;
+                return;
+            }
+
             TrackInfo? track = await _media.GetTrackAsync();
 
             if (track == null || string.IsNullOrWhiteSpace(track.Title))
@@ -549,6 +574,14 @@ public partial class MainWindow : Window
         SizeSmall.IsChecked = Math.Abs(_settings.Scale - 0.8) < 0.01;
         SizeNormal.IsChecked = Math.Abs(_settings.Scale - 1.0) < 0.01;
         SizeLarge.IsChecked = Math.Abs(_settings.Scale - 1.15) < 0.01;
+    }
+
+    private void Launcher_Click(object sender, RoutedEventArgs e)
+    {
+        _settings.ShowLauncher = LauncherMenu.IsChecked;
+        _settings.Save();
+        _ = RefreshTrackAsync();
+        UpdatePosition();
     }
 
     private void Buttons_Click(object sender, RoutedEventArgs e)

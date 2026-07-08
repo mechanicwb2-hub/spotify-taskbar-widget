@@ -14,6 +14,9 @@ public class WidgetSettings
     /// <summary>Escala do widget (0.8 = pequeno, 1.0 = normal, 1.15 = grande).</summary>
     public double Scale { get; set; } = 1.0;
 
+    /// <summary>Com o Spotify fechado: true mostra um botão "Abrir Spotify"; false esconde o widget.</summary>
+    public bool ShowLauncher { get; set; } = false;
+
     // Botões visíveis (em ecrãs pequenos, os menos importantes escondem-se sozinhos)
     public bool ShowPrev { get; set; } = true;
     public bool ShowNext { get; set; } = true;

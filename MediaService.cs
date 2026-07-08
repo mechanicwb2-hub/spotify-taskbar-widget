@@ -30,13 +30,14 @@ public sealed class MediaService
     {
         if (_manager == null) return;
 
+        // Apenas sessões do Spotify — sem fallback para outras apps (Chrome, etc.),
+        // senão o widget mostra media de outros programas quando o Spotify fecha.
         GlobalSystemMediaTransportControlsSession? chosen = null;
         try
         {
             var sessions = _manager.GetSessions();
             chosen = sessions.FirstOrDefault(s =>
-                         (s.SourceAppUserModelId ?? "").Contains("spotify", StringComparison.OrdinalIgnoreCase))
-                     ?? _manager.GetCurrentSession();
+                (s.SourceAppUserModelId ?? "").Contains("spotify", StringComparison.OrdinalIgnoreCase));
         }
         catch { }
 
