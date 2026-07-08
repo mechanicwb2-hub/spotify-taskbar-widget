@@ -1,0 +1,252 @@
+<Window x:Class="SpotifyTaskbarWidget.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Spotify Widget"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        Topmost="True" ShowInTaskbar="False" ShowActivated="False"
+        ResizeMode="NoResize" SizeToContent="WidthAndHeight"
+        UseLayoutRounding="True" SnapsToDevicePixels="True"
+        TextOptions.TextFormattingMode="Display">
+
+    <Window.Resources>
+        <!-- Botão de ícone estilo Spotify: sem fundo, o ícone amplia no hover -->
+        <Style x:Key="IconButton" TargetType="Button">
+            <Setter Property="Width" Value="26"/>
+            <Setter Property="Height" Value="26"/>
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid Background="Transparent">
+                            <ContentPresenter x:Name="content" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                              RenderTransformOrigin="0.5,0.5"/>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="content" Property="RenderTransform">
+                                    <Setter.Value>
+                                        <ScaleTransform ScaleX="1.12" ScaleY="1.12"/>
+                                    </Setter.Value>
+                                </Setter>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="content" Property="RenderTransform">
+                                    <Setter.Value>
+                                        <ScaleTransform ScaleX="0.95" ScaleY="0.95"/>
+                                    </Setter.Value>
+                                </Setter>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Botão redondo de play/pausa: círculo branco que amplia no hover, como no Spotify -->
+        <Style x:Key="PlayButton" TargetType="Button">
+            <Setter Property="Width" Value="30"/>
+            <Setter Property="Height" Value="30"/>
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="bg" Background="White" CornerRadius="15"
+                                Width="30" Height="30" RenderTransformOrigin="0.5,0.5">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bg" Property="RenderTransform">
+                                    <Setter.Value>
+                                        <ScaleTransform ScaleX="1.06" ScaleY="1.06"/>
+                                    </Setter.Value>
+                                </Setter>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="bg" Property="RenderTransform">
+                                    <Setter.Value>
+                                        <ScaleTransform ScaleX="0.97" ScaleY="0.97"/>
+                                    </Setter.Value>
+                                </Setter>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Slider estilo Spotify: pista fina, preenchimento verde, bolinha branca -->
+        <Style x:Key="SpotifySlider" TargetType="Slider">
+            <Setter Property="Height" Value="16"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Slider">
+                        <Grid VerticalAlignment="Center">
+                            <Border Height="4" CornerRadius="2" Background="#5E5E5E"/>
+                            <Track x:Name="PART_Track">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton IsTabStop="False" Focusable="False" Command="Slider.DecreaseLarge">
+                                        <RepeatButton.Template>
+                                            <ControlTemplate TargetType="RepeatButton">
+                                                <Border Height="4" CornerRadius="2" Background="#1ED760"/>
+                                            </ControlTemplate>
+                                        </RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.DecreaseRepeatButton>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton IsTabStop="False" Focusable="False" Command="Slider.IncreaseLarge">
+                                        <RepeatButton.Template>
+                                            <ControlTemplate TargetType="RepeatButton">
+                                                <Border Height="4" Background="Transparent"/>
+                                            </ControlTemplate>
+                                        </RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.IncreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb Width="12" Height="12" Focusable="False">
+                                        <Thumb.Template>
+                                            <ControlTemplate TargetType="Thumb">
+                                                <Ellipse Fill="White" Width="12" Height="12"/>
+                                            </ControlTemplate>
+                                        </Thumb.Template>
+                                    </Thumb>
+                                </Track.Thumb>
+                            </Track>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <!-- Fundo quase transparente (#01000000) para o rato ser detetado (menu/mover) -->
+    <Border x:Name="Root" Background="#01000000" CornerRadius="8" Padding="8,3" Cursor="Hand"
+            MouseLeftButtonDown="Root_MouseLeftButtonDown"
+            MouseMove="Root_MouseMove"
+            MouseLeftButtonUp="Root_MouseLeftButtonUp">
+        <Border.ContextMenu>
+            <ContextMenu>
+                <MenuItem x:Name="MoveMenu" Header="Mover widget" IsCheckable="True" Click="MoveMode_Click"
+                          ToolTip="Arrasta o widget para onde quiseres; desmarca para bloquear nessa posição"/>
+                <MenuItem Header="Repor posição automática" Click="ResetPos_Click"/>
+                <MenuItem Header="Tamanho">
+                    <MenuItem x:Name="SizeSmall" Header="Pequeno" IsCheckable="True" Click="Size_Click" Tag="0.8"/>
+                    <MenuItem x:Name="SizeNormal" Header="Normal" IsCheckable="True" Click="Size_Click" Tag="1.0"/>
+                    <MenuItem x:Name="SizeLarge" Header="Grande" IsCheckable="True" Click="Size_Click" Tag="1.15"/>
+                </MenuItem>
+                <MenuItem Header="Botões">
+                    <MenuItem x:Name="BtnLikeMenu" Header="Adicionar aos favoritos (+)" IsCheckable="True" Click="Buttons_Click"/>
+                    <MenuItem x:Name="BtnShuffleMenu" Header="Modo aleatório" IsCheckable="True" Click="Buttons_Click"/>
+                    <MenuItem x:Name="BtnPrevMenu" Header="Anterior" IsCheckable="True" Click="Buttons_Click"/>
+                    <MenuItem x:Name="BtnNextMenu" Header="Seguinte" IsCheckable="True" Click="Buttons_Click"/>
+                    <MenuItem x:Name="BtnVolumeMenu" Header="Volume" IsCheckable="True" Click="Buttons_Click"/>
+                </MenuItem>
+                <Separator/>
+                <MenuItem x:Name="AutoStartMenu" Header="Iniciar com o Windows" IsCheckable="True" Click="AutoStart_Click"/>
+                <MenuItem Header="Abrir Spotify" Click="OpenSpotify_Click"/>
+                <MenuItem x:Name="UpdateMenu" Header="Procurar atualizações" Click="Update_Click"/>
+                <Separator/>
+                <MenuItem Header="Sair" Click="Exit_Click"/>
+            </ContextMenu>
+        </Border.ContextMenu>
+
+        <Grid>
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+
+                <!-- Capa do álbum -->
+                <Border Width="34" Height="34" CornerRadius="4" Background="#22FFFFFF" VerticalAlignment="Center">
+                    <Grid>
+                        <TextBlock x:Name="ArtPlaceholder" Text="&#xE93C;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
+                                   FontSize="14" Foreground="#88FFFFFF"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        <Border x:Name="ArtImage" CornerRadius="4" Visibility="Collapsed">
+                            <Border.Background>
+                                <ImageBrush x:Name="ArtBrush" Stretch="UniformToFill"/>
+                            </Border.Background>
+                        </Border>
+                    </Grid>
+                </Border>
+
+                <!-- Título e artista (cores do Spotify: branco / #B3B3B3) -->
+                <StackPanel x:Name="TextStack" VerticalAlignment="Center" Margin="9,0,6,0" Width="150">
+                    <TextBlock x:Name="TitleText" Text="Spotify" Foreground="White"
+                               FontWeight="SemiBold" FontSize="12" TextTrimming="CharacterEllipsis"/>
+                    <TextBlock x:Name="ArtistText" Text="nada a tocar" Foreground="#B3B3B3"
+                               FontSize="11" TextTrimming="CharacterEllipsis"/>
+                </StackPanel>
+
+                <!-- Favoritos: ⊕ cinzento / ✓ verde em círculo, ícones do Spotify -->
+                <Button x:Name="LikeButton" Style="{StaticResource IconButton}"
+                        Margin="0,0,2,0" VerticalAlignment="Center" Click="Like_Click"
+                        ToolTip="Adicionar aos favoritos do Spotify">
+                    <Path x:Name="LikeIcon" Width="14" Height="14" Stretch="Uniform" Fill="#B3B3B3"
+                          Data="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13zM0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8z M11.75 8a.75.75 0 0 1-.75.75H8.75V11a.75.75 0 0 1-1.5 0V8.75H5a.75.75 0 0 1 0-1.5h2.25V5a.75.75 0 0 1 1.5 0v2.25H11a.75.75 0 0 1 .75.75z"/>
+                </Button>
+
+                <!-- Aleatório: ícone do Spotify + estrela (inteligente) + ponto verde (ativo) -->
+                <Button x:Name="ShuffleButton" Style="{StaticResource IconButton}"
+                        Margin="0,0,2,0" VerticalAlignment="Center" Click="Shuffle_Click"
+                        ToolTip="Modo aleatório">
+                    <Grid Width="20" Height="20">
+                        <Path x:Name="ShuffleIcon" Width="14" Height="14" Stretch="Uniform" Fill="#B3B3B3"
+                              HorizontalAlignment="Center" VerticalAlignment="Center"
+                              Data="M13.151.922a.75.75 0 1 0-1.06 1.06L13.109 3H11.16a3.75 3.75 0 0 0-2.873 1.34l-6.173 7.356a2.25 2.25 0 0 1-1.724.804H0v1.5h.391a3.75 3.75 0 0 0 2.873-1.34l6.173-7.356a2.25 2.25 0 0 1 1.724-.804h1.947l-1.017 1.018a.75.75 0 0 0 1.06 1.06L15.98 3.75 13.151.922zM.391 3.5H0V2h.391c1.109 0 2.16.49 2.873 1.34L4.89 5.277l-.979 1.167-1.796-2.14A2.25 2.25 0 0 0 .391 3.5zm7.5 7.223.98-1.167.957 1.14a2.25 2.25 0 0 0 1.724.804h1.947l-1.017-1.018a.75.75 0 1 1 1.06-1.06l2.829 2.828-2.829 2.828a.75.75 0 1 1-1.06-1.06L13.109 13H11.16a3.75 3.75 0 0 1-2.873-1.34l-.896-1.067z"/>
+                        <Path x:Name="ShuffleSmartStar" Width="7" Height="7" Stretch="Uniform" Fill="#1ED760"
+                              HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-1,-1,0"
+                              Visibility="Collapsed"
+                              Data="M4 0l.9 3.1L8 4l-3.1.9L4 8l-.9-3.1L0 4l3.1-.9z"/>
+                        <Ellipse x:Name="ShuffleDot" Width="3" Height="3" Fill="#1ED760"
+                                 HorizontalAlignment="Center" VerticalAlignment="Bottom"
+                                 Visibility="Collapsed"/>
+                    </Grid>
+                </Button>
+
+                <!-- Anterior / play-pausa / seguinte: ícones do Spotify -->
+                <Button x:Name="PrevButton" Style="{StaticResource IconButton}"
+                        Margin="0,0,2,0" VerticalAlignment="Center" Click="Prev_Click" ToolTip="Anterior">
+                    <Path Width="13" Height="13" Stretch="Uniform" Fill="#B3B3B3"
+                          Data="M3.3 1a.7.7 0 0 1 .7.7v5.15l9.95-5.744a.7.7 0 0 1 1.05.606v12.575a.7.7 0 0 1-1.05.607L4 9.149V13.3a.7.7 0 0 1-.7.7H1.7a.7.7 0 0 1-.7-.7V1.7a.7.7 0 0 1 .7-.7h1.6z"/>
+                </Button>
+                <Button x:Name="PlayPauseButton" Style="{StaticResource PlayButton}"
+                        Margin="2,0" VerticalAlignment="Center" Click="PlayPause_Click" ToolTip="Reproduzir/Pausar">
+                    <Path x:Name="PlayPauseIcon" Width="12" Height="12" Stretch="Uniform" Fill="Black"
+                          Data="M3 1.713a.7.7 0 0 1 1.05-.607l10.89 6.288a.7.7 0 0 1 0 1.212L4.05 14.894A.7.7 0 0 1 3 14.288V1.713z"/>
+                </Button>
+                <Button x:Name="NextButton" Style="{StaticResource IconButton}"
+                        Margin="2,0,0,0" VerticalAlignment="Center" Click="Next_Click" ToolTip="Seguinte">
+                    <Path Width="13" Height="13" Stretch="Uniform" Fill="#B3B3B3"
+                          Data="M12.7 1a.7.7 0 0 0-.7.7v5.15L2.05 1.106A.7.7 0 0 0 1 1.712v12.575a.7.7 0 0 0 1.05.607L12 9.149V13.3a.7.7 0 0 0 .7.7h1.6a.7.7 0 0 0 .7-.7V1.7a.7.7 0 0 0-.7-.7h-1.6z"/>
+                </Button>
+
+                <!-- Volume: altifalante do Spotify -->
+                <Button x:Name="VolumeButton" Style="{StaticResource IconButton}"
+                        Margin="2,0,0,0" VerticalAlignment="Center" Click="Volume_Click"
+                        ToolTip="Volume do Spotify">
+                    <Path Width="14" Height="14" Stretch="Uniform" Fill="#B3B3B3"
+                          Data="M9.741.85a.75.75 0 0 1 .375.65v13a.75.75 0 0 1-1.125.65l-6.925-4a3.642 3.642 0 0 1-1.33-4.967 3.639 3.639 0 0 1 1.33-1.332l6.925-4a.75.75 0 0 1 .75 0zm-6.924 5.3a2.139 2.139 0 0 0 0 3.7l5.8 3.35V2.8l-5.8 3.35zm8.683 4.29V5.56a2.75 2.75 0 0 1 0 4.88z M11.5 13.614a5.752 5.752 0 0 0 0-11.228v1.55a4.252 4.252 0 0 1 0 8.127v1.55z"/>
+                </Button>
+            </StackPanel>
+
+            <!-- Slider de volume horizontal estilo Spotify -->
+            <Popup x:Name="VolumePopup" PlacementTarget="{Binding ElementName=VolumeButton}"
+                   Placement="Top" AllowsTransparency="True" PopupAnimation="Fade" StaysOpen="True">
+                <Border Background="#282828" CornerRadius="6" Padding="12,10" Margin="6"
+                        MouseLeave="VolumePopup_MouseLeave">
+                    <StackPanel Orientation="Horizontal">
+                        <Path Width="13" Height="13" Stretch="Uniform" Fill="#B3B3B3"
+                              Margin="0,0,10,0" VerticalAlignment="Center"
+                              Data="M9.741.85a.75.75 0 0 1 .375.65v13a.75.75 0 0 1-1.125.65l-6.925-4a3.642 3.642 0 0 1-1.33-4.967 3.639 3.639 0 0 1 1.33-1.332l6.925-4a.75.75 0 0 1 .75 0zm-6.924 5.3a2.139 2.139 0 0 0 0 3.7l5.8 3.35V2.8l-5.8 3.35zm8.683 4.29V5.56a2.75 2.75 0 0 1 0 4.88z M11.5 13.614a5.752 5.752 0 0 0 0-11.228v1.55a4.252 4.252 0 0 1 0 8.127v1.55z"/>
+                        <Slider x:Name="VolumeSlider" Style="{StaticResource SpotifySlider}" Width="100"
+                                Minimum="0" Maximum="100" SmallChange="5" LargeChange="10"
+                                IsMoveToPointEnabled="True" ValueChanged="VolumeSlider_ValueChanged"
+                                VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Border>
+            </Popup>
+        </Grid>
+    </Border>
+</Window>
