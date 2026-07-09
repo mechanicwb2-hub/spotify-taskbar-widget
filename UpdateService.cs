@@ -30,7 +30,11 @@ internal static class UpdateService
         if (!IsConfigured) return null;
 
         using var http = NewClient();
-        string json = await http.GetStringAsync($"https://api.github.com/repos/{GitHubRepo}/releases/latest");
+        using var response = await http.GetAsync($"https://api.github.com/repos/{GitHubRepo}/releases/latest");
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+            return null; // repositório ainda sem releases — não é um erro
+        response.EnsureSuccessStatusCode();
+        string json = await response.Content.ReadAsStringAsync();
         using var doc = JsonDocument.Parse(json);
 
         string tag = doc.RootElement.GetProperty("tag_name").GetString() ?? "";
