@@ -87,8 +87,10 @@ public partial class MainWindow : Window
     private readonly object _anchorLock = new();
     private double? _widgetsRightPx;
     private double? _startLeftPx;
+    private double? _taskEndPx;
     private DateTime _lastAnchorQuery = DateTime.MinValue;
     private bool _anchorQueryRunning;
+    private IntPtr _anchorsTray;
 
     private const double MaxTextWidth = 150;
     private const double MinTextWidth = 60;
@@ -266,16 +268,30 @@ public partial class MainWindow : Window
         double trayHeight = br.Y - tl.Y;
         double top = tl.Y + (trayHeight - ActualHeight) / 2;
 
+        if (tray != _anchorsTray)
+        {
+            // Mudou a barra alvo (outro monitor): descartar âncoras da anterior
+            _anchorsTray = tray;
+            _lastAnchorQuery = DateTime.MinValue;
+            lock (_anchorLock)
+            {
+                _widgetsRightPx = null;
+                _startLeftPx = null;
+                _taskEndPx = null;
+            }
+        }
         RefreshAnchors(tray);
-        double? widgetsRightPx, startLeftPx;
+        double? widgetsRightPx, startLeftPx, taskEndPx;
         lock (_anchorLock)
         {
             widgetsRightPx = _widgetsRightPx;
             startLeftPx = _startLeftPx;
+            taskEndPx = _taskEndPx;
         }
 
         bool primaryTray = _settings.MonitorIndex == 0;
         bool rightAnchored = false;
+        double rightAnchorLeftLimit = tl.X + 12;
         double left, rightLimit;
         if (!_settings.AutoPosition)
         {
@@ -296,17 +312,20 @@ public partial class MainWindow : Window
         else
         {
             // Ícones alinhados à esquerda (ou barra secundária): o espaço vazio
-            // está à direita — encostar antes dos ícones do sistema/relógio
+            // está à direita — encostar antes dos ícones do sistema/relógio,
+            // sem nunca tapar a fila de ícones das apps
             rightAnchored = true;
             int? notifyLeftPx = Interop.GetTrayNotifyLeft(tray);
             rightLimit = notifyLeftPx.HasValue
                 ? m.Transform(new Point(notifyLeftPx.Value, 0)).X - 8
                 : br.X - 220;
-            left = rightLimit - ActualWidth;
+            if (taskEndPx.HasValue)
+                rightAnchorLeftLimit = m.Transform(new Point(taskEndPx.Value, 0)).X + 8;
+            left = Math.Max(rightAnchorLeftLimit, rightLimit - ActualWidth);
         }
 
         if (_spotifyPresent)
-            ApplyResponsiveLayout(rightAnchored ? double.PositiveInfinity : rightLimit - left);
+            ApplyResponsiveLayout(rightAnchored ? rightLimit - rightAnchorLeftLimit : rightLimit - left);
 
         if (!_dragging)
         {
@@ -399,11 +418,12 @@ public partial class MainWindow : Window
         {
             try
             {
-                var (widgetsRight, startLeft) = TaskbarAnchors.Get(tray);
+                var (widgetsRight, startLeft, taskButtonsRight) = TaskbarAnchors.Get(tray);
                 lock (_anchorLock)
                 {
                     _widgetsRightPx = widgetsRight;
                     _startLeftPx = startLeft;
+                    _taskEndPx = taskButtonsRight;
                 }
             }
             finally

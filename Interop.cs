@@ -43,14 +43,20 @@ internal static class Interop
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern IntPtr FindWindowEx(IntPtr hWndParent, IntPtr hWndChildAfter, string lpszClass, string? lpszWindow);
 
-    /// <summary>Barras de tarefas dos monitores secundários (Win11: Shell_SecondaryTrayWnd).</summary>
+    /// <summary>Barras de tarefas dos monitores secundários (Win11: Shell_SecondaryTrayWnd),
+    /// ordenadas pela POSIÇÃO do monitor (esquerda→direita, cima→baixo). A enumeração
+    /// crua vem por z-order, que muda a todo o momento — sem ordenação estável,
+    /// "Monitor 2" e "Monitor 3" trocavam de identidade e o widget saltava entre eles.</summary>
     public static List<IntPtr> GetSecondaryTrays()
     {
-        var list = new List<IntPtr>();
+        var list = new List<(IntPtr Handle, int Left, int Top)>();
         IntPtr h = IntPtr.Zero;
         while ((h = FindWindowEx(IntPtr.Zero, h, "Shell_SecondaryTrayWnd", null)) != IntPtr.Zero)
-            list.Add(h);
-        return list;
+        {
+            GetWindowRect(h, out RECT r);
+            list.Add((h, r.Left, r.Top));
+        }
+        return list.OrderBy(t => t.Left).ThenBy(t => t.Top).Select(t => t.Handle).ToList();
     }
 
     /// <summary>Limite esquerdo (px físicos) da área de ícones do sistema (relógio, rede…).</summary>
