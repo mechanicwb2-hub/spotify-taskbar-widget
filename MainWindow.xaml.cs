@@ -60,6 +60,13 @@ public partial class MainWindow : Window
     private DateTime _basePositionAt;
     private bool _isPlayingUi;
 
+    // Estado via acessibilidade (favorito/aleatório/repetição): caro de ler,
+    // por isso só em mudanças de faixa, após cliques, ou a cada 5 s
+    private (bool? Liked, ShuffleMode Shuffle, RepeatMode Repeat) _uiaState =
+        (null, ShuffleMode.Unknown, RepeatMode.Unknown);
+    private DateTime _lastUiaStateAt = DateTime.MinValue;
+    private bool _uiaDirty = true;
+
     // Âncoras da barra (píxeis físicos), atualizadas em background via UI Automation
     private readonly object _anchorLock = new();
     private double? _widgetsRightPx;
@@ -153,8 +160,10 @@ public partial class MainWindow : Window
         _media.Changed += () =>
         {
             _artDirty = true;
+            _uiaDirty = true;
             Dispatcher.InvokeAsync(() => _ = RefreshTrackAsync());
         };
+        _media.TimelineChanged += () => Dispatcher.InvokeAsync(RefreshTimeline);
 
         _trackTimer.Tick += (_, _) => _ = RefreshTrackAsync();
         _trackTimer.Start();
@@ -429,7 +438,15 @@ public partial class MainWindow : Window
 
             // Estado real (favoritos + aleatório + repetição) da árvore de
             // acessibilidade do Spotify; o SMTC serve de rede de segurança.
-            var (liked, uiaMode, repeatMode) = await Task.Run(() => _uia.GetState());
+            string key = track.Title + "|" + track.Artist;
+            bool keyChanged = key != _lastTrackKey;
+            if (keyChanged || _uiaDirty || DateTime.UtcNow - _lastUiaStateAt > TimeSpan.FromSeconds(5))
+            {
+                _uiaDirty = false;
+                _uiaState = await Task.Run(() => _uia.GetState());
+                _lastUiaStateAt = DateTime.UtcNow;
+            }
+            var (liked, uiaMode, repeatMode) = _uiaState;
             _liked = liked;
 
             RepeatIcon.Fill = repeatMode is RepeatMode.Context or RepeatMode.Track
@@ -466,8 +483,7 @@ public partial class MainWindow : Window
                 _ => L.TipShuffle,
             };
 
-            string key = track.Title + "|" + track.Artist;
-            if (key != _lastTrackKey || _artDirty)
+            if (keyChanged || _artDirty)
             {
                 _lastTrackKey = key;
                 _artDirty = false;
@@ -507,7 +523,28 @@ public partial class MainWindow : Window
 
     // ---------- Controlos ----------
 
-    private async void PlayPause_Click(object sender, RoutedEventArgs e) => await _media.TogglePlayPauseAsync();
+    /// <summary>Atualização leve disparada pelos eventos de timeline (frequentes).</summary>
+    private void RefreshTimeline()
+    {
+        if (_media.GetTimeline() is not { } tl) return;
+        _duration = tl.Duration;
+        _basePosition = tl.Position;
+        _basePositionAt = DateTime.UtcNow;
+        _isPlayingUi = tl.IsPlaying;
+        PlayPauseIcon.Data = tl.IsPlaying ? PauseGeo : PlayGeo;
+        UpdateProgressUi();
+    }
+
+    private async void PlayPause_Click(object sender, RoutedEventArgs e)
+    {
+        // Feedback imediato; os eventos do SMTC corrigem se o comando falhar
+        _isPlayingUi = !_isPlayingUi;
+        PlayPauseIcon.Data = _isPlayingUi ? PauseGeo : PlayGeo;
+        if (!_isPlayingUi)
+            _basePosition += DateTime.UtcNow - _basePositionAt; // congelar posição
+        _basePositionAt = DateTime.UtcNow;
+        await _media.TogglePlayPauseAsync();
+    }
     private async void Next_Click(object sender, RoutedEventArgs e) => await _media.NextAsync();
     private async void Prev_Click(object sender, RoutedEventArgs e) => await _media.PreviousAsync();
 
@@ -518,6 +555,7 @@ public partial class MainWindow : Window
         if (!ok)
             await _media.ToggleShuffleAsync(); // sem janela do Spotify: só liga/desliga
         await Task.Delay(400);
+        _uiaDirty = true;
         await RefreshTrackAsync();
     }
 
@@ -527,6 +565,7 @@ public partial class MainWindow : Window
         if (!ok)
             await _media.CycleRepeatAsync(); // sem janela do Spotify: tentar via SMTC
         await Task.Delay(400);
+        _uiaDirty = true;
         await RefreshTrackAsync();
     }
 
@@ -538,6 +577,7 @@ public partial class MainWindow : Window
         if (!ok)
             await Task.Run(SpotifyActions.LikeCurrentTrack); // recurso: atalho de teclado
         await Task.Delay(400);
+        _uiaDirty = true;
         await RefreshTrackAsync();
     }
 

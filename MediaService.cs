@@ -20,6 +20,10 @@ public sealed class MediaService
     /// <summary>Disparado (em thread de background) quando a faixa ou o estado mudam.</summary>
     public event Action? Changed;
 
+    /// <summary>Disparado só quando a posição/duração mudam — acontece a cada poucos
+    /// segundos, por isso o tratamento tem de ser leve.</summary>
+    public event Action? TimelineChanged;
+
     public async Task InitializeAsync()
     {
         _manager = await GlobalSystemMediaTransportControlsSessionManager.RequestAsync();
@@ -72,7 +76,26 @@ public sealed class MediaService
         Changed?.Invoke();
 
     private void OnTimelineChanged(GlobalSystemMediaTransportControlsSession sender, TimelinePropertiesChangedEventArgs args) =>
-        Changed?.Invoke();
+        TimelineChanged?.Invoke();
+
+    /// <summary>Leitura rápida da timeline (sem propriedades da faixa nem capa).</summary>
+    public (TimeSpan Position, TimeSpan Duration, bool IsPlaying)? GetTimeline()
+    {
+        var s = _session;
+        if (s == null) return null;
+        try
+        {
+            var tl = s.GetTimelineProperties();
+            var pi = s.GetPlaybackInfo();
+            return (tl?.Position ?? TimeSpan.Zero,
+                    tl != null ? tl.EndTime - tl.StartTime : TimeSpan.Zero,
+                    pi?.PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing);
+        }
+        catch
+        {
+            return null;
+        }
+    }
 
     public async Task<TrackInfo?> GetTrackAsync()
     {
