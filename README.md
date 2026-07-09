@@ -9,7 +9,7 @@ skips, favoritos, aleatório, repetição, volume e barra de progresso).
 > *Independent project, **not affiliated with, sponsored or endorsed by
 > Spotify AB**. "Spotify" is a trademark of Spotify AB.*
 
-![preview](docs/preview.png)
+![demo](docs/demo.gif)
 
 ## Como funciona
 
