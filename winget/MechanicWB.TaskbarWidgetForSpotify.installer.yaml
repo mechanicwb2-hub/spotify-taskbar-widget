@@ -1,5 +1,5 @@
 ﻿PackageIdentifier: MechanicWB.TaskbarWidgetForSpotify
-PackageVersion: 1.2.2
+PackageVersion: 1.2.3
 InstallerLocale: en-US
 Platform:
   - Windows.Desktop
@@ -12,7 +12,7 @@ InstallModes:
 UpgradeBehavior: install
 Installers:
   - Architecture: x64
-    InstallerUrl: https://github.com/mechanicwb2-hub/spotify-taskbar-widget/releases/download/v1.2.2/SpotifyTaskbarWidget-Setup.exe
-    InstallerSha256: 6B0D6383ED78105AC5A85FC1761C31152FB1E1A878758AA150AFA5D4F6E078BA
+    InstallerUrl: https://github.com/mechanicwb2-hub/spotify-taskbar-widget/releases/download/v1.2.3/SpotifyTaskbarWidget-Setup.exe
+    InstallerSha256: 35B1A8F8497A5F99EC997E985FF6E082DEB415CE9F60D8DA2C4663520A0F3B3C
 ManifestType: installer
 ManifestVersion: 1.6.0

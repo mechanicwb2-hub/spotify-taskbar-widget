@@ -1,8 +1,8 @@
 ﻿# Manifesto winget (versÃ£o) â€” submeter para microsoft/winget-pkgs em
 # manifests/m/MechanicWB/TaskbarWidgetForSpotify/1.1.0/
-# NOTA: requer a release v1.2.2 publicada no GitHub e a conta desbloqueada.
+# NOTA: requer a release v1.2.3 publicada no GitHub e a conta desbloqueada.
 PackageIdentifier: MechanicWB.TaskbarWidgetForSpotify
-PackageVersion: 1.2.2
+PackageVersion: 1.2.3
 DefaultLocale: en-US
 ManifestType: version
 ManifestVersion: 1.6.0
