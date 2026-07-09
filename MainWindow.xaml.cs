@@ -457,6 +457,8 @@ public partial class MainWindow : Window
                 _uiaState = await Task.Run(() => _uia.GetState());
                 _lastUiaStateAt = DateTime.UtcNow;
             }
+            if (keyChanged)
+                _ = SettleStateAsync(); // o aria do Spotify demora segundos a refletir a faixa nova
             var (liked, uiaMode, repeatMode) = _uiaState;
             // Depois de adicionar aos favoritos, ignorar "não gostado" antigo — o
             // texto do botão do Spotify pode demorar vários segundos a atualizar
@@ -651,6 +653,23 @@ public partial class MainWindow : Window
         await Task.Delay(4000);
         _uiaDirty = true;
         await RefreshTrackAsync();
+    }
+
+    private int _settleToken;
+
+    /// <summary>Depois de uma mudança de faixa, o Spotify demora segundos a
+    /// atualizar os textos de acessibilidade — re-ler algumas vezes até assentar.
+    /// Uma nova mudança de faixa cancela a série anterior.</summary>
+    private async Task SettleStateAsync()
+    {
+        int token = ++_settleToken;
+        foreach (int delay in new[] { 1500, 1500, 3000 }) // t = 1,5 s / 3 s / 6 s
+        {
+            await Task.Delay(delay);
+            if (token != _settleToken) return;
+            _uiaDirty = true;
+            await RefreshTrackAsync();
+        }
     }
 
     private async void Volume_Click(object sender, RoutedEventArgs e)
