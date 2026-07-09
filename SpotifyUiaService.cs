@@ -129,18 +129,10 @@ public sealed class SpotifyUiaService
         else
             return false; // sem padrão utilizável → clique real como recurso
 
-        for (int i = 0; i < 4; i++)
-        {
-            Thread.Sleep(250);
-            try
-            {
-                string after = FindLikeButton()?.Current.Name ?? "";
-                if (after.Contains("playlist", StringComparison.OrdinalIgnoreCase))
-                    return true;
-            }
-            catch { }
-        }
-        return false; // não confirmado → o chamador tenta o atalho de teclado
+        // Não esperar pela confirmação aqui: o Spotify demora vários segundos a
+        // atualizar o texto do botão (mesmo com a ação já aplicada), e esperar
+        // segurava o lock. O chamador reconcilia o estado mais tarde.
+        return true;
     });
 
     /// <summary>Recurso quando os padrões de acessibilidade falham: restaura a

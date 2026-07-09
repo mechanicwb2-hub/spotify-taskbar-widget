@@ -458,8 +458,9 @@ public partial class MainWindow : Window
                 _lastUiaStateAt = DateTime.UtcNow;
             }
             var (liked, uiaMode, repeatMode) = _uiaState;
-            // Depois de adicionar aos favoritos, ignorar "não gostado" antigo por 3 s
-            if (liked == false && DateTime.UtcNow - _likedOptimisticAt < TimeSpan.FromSeconds(3))
+            // Depois de adicionar aos favoritos, ignorar "não gostado" antigo — o
+            // texto do botão do Spotify pode demorar vários segundos a atualizar
+            if (liked == false && DateTime.UtcNow - _likedOptimisticAt < TimeSpan.FromSeconds(8))
                 liked = true;
             _liked = liked;
 
@@ -638,7 +639,16 @@ public partial class MainWindow : Window
 
         bool ok = await Task.Run(() => _uia.AddToFavorites());
         if (!ok)
-            await Task.Run(() => _uia.AddToFavoritesByClick()); // recurso: clique real
+            await Task.Run(() => _uia.AddToFavoritesByClick()); // recurso raro: sem verbo disponível
+
+        // O texto do botão do Spotify demora segundos a refletir a adição —
+        // reconciliar mais tarde em vez de concluir já que falhou
+        _ = ReconcileLikeLaterAsync();
+    }
+
+    private async Task ReconcileLikeLaterAsync()
+    {
+        await Task.Delay(4000);
         _uiaDirty = true;
         await RefreshTrackAsync();
     }
