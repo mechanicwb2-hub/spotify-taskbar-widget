@@ -73,7 +73,10 @@ and dark Windows taskbar themes.
   3. `ISCC.exe setup.iss` to produce `installer\SpotifyTaskbarWidget-Setup.exe`;
   4. create the GitHub release with tag `vX.Y.Z`, attaching **both**
      `publish\SpotifyTaskbarWidget.exe` (auto-update) and
-     `installer\SpotifyTaskbarWidget-Setup.exe` (new users);
+     `installer\SpotifyTaskbarWidget-Setup.exe` (new users).
+     **Never rename these assets** — the auto-updater matches
+     `SpotifyTaskbarWidget.exe` by exact name (GitHub sorts assets
+     alphabetically, so "first .exe" heuristics are unsafe);
   5. update the SHA256 in the winget manifest (`winget\…installer.yaml`).
 
 ## Resilience
