@@ -425,7 +425,7 @@ public partial class MainWindow : Window
             {
                 TitleText.Text = "Spotify";
                 ArtistText.Text = L.NothingPlaying;
-                PlayPauseIcon.Data = PlayGeo;
+                SetPlayPauseIcon(false);
                 ShuffleIcon.Fill = DimWhite;
                 ShuffleDot.Visibility = Visibility.Collapsed;
                 ShuffleSmartStar.Visibility = Visibility.Collapsed;
@@ -445,7 +445,7 @@ public partial class MainWindow : Window
             TitleText.Text = track.Title;
             ArtistText.Text = track.Artist;
             UpdateMarquee();
-            PlayPauseIcon.Data = _isPlayingUi ? PauseGeo : PlayGeo;
+            SetPlayPauseIcon(_isPlayingUi);
 
             // Estado real (favoritos + aleatório + repetição) da árvore de
             // acessibilidade do Spotify; o SMTC serve de rede de segurança.
@@ -523,6 +523,14 @@ public partial class MainWindow : Window
 
     // ---------- Controlos ----------
 
+    /// <summary>O triângulo de play centrado geometricamente parece deslocado à
+    /// esquerda (a massa visual fica à esquerda) — compensação ótica de 1,5px.</summary>
+    private void SetPlayPauseIcon(bool playing)
+    {
+        PlayPauseIcon.Data = playing ? PauseGeo : PlayGeo;
+        PlayPauseIcon.Margin = playing ? new Thickness(0) : new Thickness(1.5, 0, 0, 0);
+    }
+
     private void ApplyShuffleVisual(ShuffleMode mode)
     {
         ShuffleIcon.Fill = mode switch
@@ -563,7 +571,7 @@ public partial class MainWindow : Window
             _basePosition = tl.Position;
             _basePositionAt = DateTime.UtcNow;
             _isPlayingUi = tl.IsPlaying;
-            PlayPauseIcon.Data = tl.IsPlaying ? PauseGeo : PlayGeo;
+            SetPlayPauseIcon(tl.IsPlaying);
         }
         UpdateProgressUi();
     }
@@ -574,7 +582,7 @@ public partial class MainWindow : Window
         // depois disso o estado real do SMTC volta a mandar
         _isPlayingUi = !_isPlayingUi;
         _playToggledAt = DateTime.UtcNow;
-        PlayPauseIcon.Data = _isPlayingUi ? PauseGeo : PlayGeo;
+        SetPlayPauseIcon(_isPlayingUi);
         if (!_isPlayingUi)
             _basePosition += DateTime.UtcNow - _basePositionAt; // congelar posição
         _basePositionAt = DateTime.UtcNow;
