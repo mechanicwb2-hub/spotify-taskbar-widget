@@ -103,16 +103,33 @@ public sealed class SpotifyUiaService
 
     // ---------- Ações ----------
 
-    /// <summary>Adiciona aos favoritos. Não invoca quando já está guardado
-    /// (nesse estado o botão do Spotify abre um menu de playlists).</summary>
+    /// <summary>Adiciona aos favoritos e CONFIRMA que ficou guardado (o nome do
+    /// botão passa a referir "playlist"). Sem confirmação devolve false, para o
+    /// chamador usar o atalho de teclado como recurso. Não invoca quando já
+    /// está guardado (nesse estado o botão do Spotify abre um menu).</summary>
     public bool AddToFavorites() => DoWithRetry(() =>
     {
         var like = FindLikeButton();
         if (like == null) return (bool?)null; // contentor obsoleto → repetir após rebuild
+
         string name = like.Current.Name ?? "";
-        if (!name.Contains("playlist", StringComparison.OrdinalIgnoreCase))
-            ((InvokePattern)like.GetCurrentPattern(InvokePattern.Pattern)).Invoke();
-        return true;
+        if (name.Contains("playlist", StringComparison.OrdinalIgnoreCase))
+            return true; // já está nos favoritos
+
+        ((InvokePattern)like.GetCurrentPattern(InvokePattern.Pattern)).Invoke();
+
+        for (int i = 0; i < 4; i++)
+        {
+            Thread.Sleep(250);
+            try
+            {
+                string after = FindLikeButton()?.Current.Name ?? "";
+                if (after.Contains("playlist", StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+            catch { }
+        }
+        return false; // não confirmado → o chamador tenta o atalho de teclado
     });
 
     /// <summary>Um clique no botão do Spotify: desligado → aleatório → inteligente → desligado.</summary>
@@ -242,12 +259,17 @@ public sealed class SpotifyUiaService
 
     // ---------- Localização dos elementos ----------
 
+    // Seleção pela ORDEM DO DOM (FindAll devolve em ordem do documento): imune
+    // aos retângulos obsoletos/vazios de janelas minimizadas. No grupo do título,
+    // o botão de favoritos é o último (capa → links → favoritos); nos controlos,
+    // o aleatório é o primeiro (aleatório → anterior → play → seguinte).
+
     private AutomationElement? FindLikeButton()
     {
         var group = _trackInfoGroup;
         if (group == null) return null;
         var buttons = group.FindAll(TreeScope.Descendants, ButtonCond);
-        return buttons.Cast<AutomationElement>().OrderByDescending(SafeLeft).FirstOrDefault();
+        return buttons.Count > 0 ? buttons[buttons.Count - 1] : null;
     }
 
     private AutomationElement? FindShuffleButton()
@@ -255,7 +277,7 @@ public sealed class SpotifyUiaService
         var group = _controlsGroup;
         if (group == null) return null;
         var buttons = group.FindAll(TreeScope.Children, ButtonCond);
-        return buttons.Cast<AutomationElement>().OrderBy(SafeLeft).FirstOrDefault();
+        return buttons.Count > 0 ? buttons[0] : null;
     }
 
     private AutomationElement? FindRepeatCheckbox() =>

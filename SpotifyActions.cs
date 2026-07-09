@@ -15,13 +15,22 @@ internal static class SpotifyActions
         var proc = Process.GetProcessesByName("Spotify").FirstOrDefault(p => p.MainWindowHandle != IntPtr.Zero);
         if (proc == null) return;
 
+        IntPtr spotify = proc.MainWindowHandle;
         IntPtr previous = Interop.GetForegroundWindow();
+
+        // Minimizada, a janela pode não processar o atalho — restaurar por instantes
+        bool wasMinimized = Interop.IsIconic(spotify);
+        if (wasMinimized)
+        {
+            Interop.ShowWindow(spotify, Interop.SW_RESTORE);
+            Thread.Sleep(250);
+        }
 
         // "Toque" no Alt liberta a restrição do SetForegroundWindow
         Interop.keybd_event(Interop.VK_MENU, 0, 0, UIntPtr.Zero);
         Interop.keybd_event(Interop.VK_MENU, 0, Interop.KEYEVENTF_KEYUP, UIntPtr.Zero);
-        Interop.SetForegroundWindow(proc.MainWindowHandle);
-        Thread.Sleep(120);
+        Interop.SetForegroundWindow(spotify);
+        Thread.Sleep(150);
 
         Interop.keybd_event(Interop.VK_MENU, 0, 0, UIntPtr.Zero);
         Interop.keybd_event(Interop.VK_SHIFT, 0, 0, UIntPtr.Zero);
@@ -29,8 +38,10 @@ internal static class SpotifyActions
         Interop.keybd_event(Interop.VK_B, 0, Interop.KEYEVENTF_KEYUP, UIntPtr.Zero);
         Interop.keybd_event(Interop.VK_SHIFT, 0, Interop.KEYEVENTF_KEYUP, UIntPtr.Zero);
         Interop.keybd_event(Interop.VK_MENU, 0, Interop.KEYEVENTF_KEYUP, UIntPtr.Zero);
-        Thread.Sleep(120);
+        Thread.Sleep(200);
 
+        if (wasMinimized)
+            Interop.ShowWindow(spotify, Interop.SW_MINIMIZE);
         if (previous != IntPtr.Zero)
             Interop.SetForegroundWindow(previous);
     }

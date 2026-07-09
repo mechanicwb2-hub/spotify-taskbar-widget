@@ -10,6 +10,10 @@ internal static class Interop
     public const int WS_EX_NOACTIVATE = 0x08000000;
 
     public const int SW_RESTORE = 9;
+    public const int SW_MINIMIZE = 6;
+
+    [DllImport("user32.dll")]
+    public static extern bool IsIconic(IntPtr hWnd);
 
     private static readonly IntPtr HWND_TOPMOST = new(-1);
     private const uint SWP_NOMOVE = 0x0002;
