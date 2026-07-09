@@ -18,7 +18,7 @@ namespace SpotifyTaskbarWidget;
 internal static class UpdateService
 {
     // Repositório GitHub "dono/repo" das releases. Com "CHANGEME", a verificação fica desativada.
-    public const string GitHubRepo = "MechanicWB/spotify-taskbar-widget";
+    public const string GitHubRepo = "mechanicwb2-hub/spotify-taskbar-widget";
 
     public static bool IsConfigured => !GitHubRepo.Contains("CHANGEME");
 

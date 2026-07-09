@@ -4,7 +4,7 @@
 #define MyAppName "Taskbar Widget for Spotify"
 #define MyAppVersion "1.1.0"
 #define MyAppPublisher "MechanicWB"
-#define MyAppURL "https://github.com/MechanicWB/spotify-taskbar-widget"
+#define MyAppURL "https://github.com/mechanicwb2-hub/spotify-taskbar-widget"
 #define MyAppExeName "SpotifyTaskbarWidget.exe"
 
 [Setup]
