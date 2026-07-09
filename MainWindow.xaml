@@ -134,14 +134,14 @@
             <ContextMenu Closed="ContextMenu_Closed">
                 <MenuItem x:Name="MoveMenu" Header="Mover widget" IsCheckable="True" Click="MoveMode_Click"
                           ToolTip="Arrasta o widget para onde quiseres; desmarca para bloquear nessa posição"/>
-                <MenuItem Header="Repor posição automática" Click="ResetPos_Click"/>
+                <MenuItem x:Name="ResetPosMenu" Header="Repor posição automática" Click="ResetPos_Click"/>
                 <MenuItem x:Name="MonitorMenu" Header="Monitor"/>
-                <MenuItem Header="Tamanho">
+                <MenuItem x:Name="SizeMenuItem" Header="Tamanho">
                     <MenuItem x:Name="SizeSmall" Header="Pequeno" IsCheckable="True" Click="Size_Click" Tag="0.8"/>
                     <MenuItem x:Name="SizeNormal" Header="Normal" IsCheckable="True" Click="Size_Click" Tag="1.0"/>
                     <MenuItem x:Name="SizeLarge" Header="Grande" IsCheckable="True" Click="Size_Click" Tag="1.1"/>
                 </MenuItem>
-                <MenuItem Header="Botões">
+                <MenuItem x:Name="ButtonsMenuItem" Header="Botões">
                     <MenuItem x:Name="BtnLikeMenu" Header="Adicionar aos favoritos (+)" IsCheckable="True" Click="Buttons_Click"/>
                     <MenuItem x:Name="BtnShuffleMenu" Header="Modo aleatório" IsCheckable="True" Click="Buttons_Click"/>
                     <MenuItem x:Name="BtnPrevMenu" Header="Anterior" IsCheckable="True" Click="Buttons_Click"/>
@@ -155,10 +155,10 @@
                           ToolTip="Com o Spotify fechado, mostra um botão para o abrir em vez de esconder o widget"/>
                 <Separator/>
                 <MenuItem x:Name="AutoStartMenu" Header="Iniciar com o Windows" IsCheckable="True" Click="AutoStart_Click"/>
-                <MenuItem Header="Abrir Spotify" Click="OpenSpotify_Click"/>
+                <MenuItem x:Name="OpenSpotifyMenu" Header="Abrir Spotify" Click="OpenSpotify_Click"/>
                 <MenuItem x:Name="UpdateMenu" Header="Procurar atualizações" Click="Update_Click"/>
                 <Separator/>
-                <MenuItem Header="Sair" Click="Exit_Click"/>
+                <MenuItem x:Name="ExitMenu" Header="Sair" Click="Exit_Click"/>
             </ContextMenu>
         </Border.ContextMenu>
 

@@ -1,0 +1,18 @@
+PackageIdentifier: MechanicWB.TaskbarWidgetForSpotify
+PackageVersion: 1.1.0
+InstallerLocale: en-US
+Platform:
+  - Windows.Desktop
+MinimumOSVersion: 10.0.22000.0
+InstallerType: inno
+Scope: user
+InstallModes:
+  - interactive
+  - silent
+UpgradeBehavior: install
+Installers:
+  - Architecture: x64
+    InstallerUrl: https://github.com/MechanicWB/spotify-taskbar-widget/releases/download/v1.1.0/SpotifyTaskbarWidget-Setup.exe
+    InstallerSha256: 73ED5CF622BF5D7B968A47F425254C173B9B89A29A0C867B0370DF1860ACFFFE
+ManifestType: installer
+ManifestVersion: 1.6.0

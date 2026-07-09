@@ -85,8 +85,47 @@ public partial class MainWindow : Window
         Interop.SetWindowLong(_hwnd, Interop.GWL_EXSTYLE, ex | Interop.WS_EX_TOOLWINDOW | Interop.WS_EX_NOACTIVATE);
     }
 
+    /// <summary>Aplica os textos no idioma do Windows (PT ou EN).</summary>
+    private void ApplyLanguage()
+    {
+        MoveMenu.Header = L.MoveWidget;
+        MoveMenu.ToolTip = L.MoveWidgetTip;
+        ResetPosMenu.Header = L.ResetAutoPos;
+        MonitorMenu.Header = L.MonitorMenu;
+        SizeMenuItem.Header = L.SizeMenu;
+        SizeSmall.Header = L.SizeSmall;
+        SizeNormal.Header = L.SizeNormal;
+        SizeLarge.Header = L.SizeLarge;
+        ButtonsMenuItem.Header = L.ButtonsMenu;
+        BtnLikeMenu.Header = L.BtnLike;
+        BtnShuffleMenu.Header = L.BtnShuffle;
+        BtnPrevMenu.Header = L.BtnPrev;
+        BtnNextMenu.Header = L.BtnNext;
+        BtnRepeatMenu.Header = L.BtnRepeat;
+        BtnVolumeMenu.Header = L.BtnVolume;
+        ProgressMenu.Header = L.ProgressBar;
+        LauncherMenu.Header = L.ShowLauncher;
+        LauncherMenu.ToolTip = L.ShowLauncherTip;
+        AutoStartMenu.Header = L.AutoStart;
+        OpenSpotifyMenu.Header = L.OpenSpotify;
+        UpdateMenu.Header = L.CheckUpdates;
+        ExitMenu.Header = L.Exit;
+
+        PrevButton.ToolTip = L.TipPrev;
+        PlayPauseButton.ToolTip = L.TipPlayPause;
+        NextButton.ToolTip = L.TipNext;
+        VolumeButton.ToolTip = L.TipVolume;
+        RepeatButton.ToolTip = L.TipRepeat;
+        ShuffleButton.ToolTip = L.TipShuffle;
+        LikeButton.ToolTip = L.TipLikeAdd;
+        LauncherPanel.ToolTip = L.TipOpenSpotify;
+        LauncherText.Text = L.OpenSpotify;
+        ArtistText.Text = L.NothingPlaying;
+    }
+
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
+        ApplyLanguage();
         AutoStartMenu.IsChecked = IsAutoStartEnabled();
         LauncherMenu.IsChecked = _settings.ShowLauncher;
         ProgressMenu.IsChecked = _settings.ShowProgress;
@@ -365,7 +404,7 @@ public partial class MainWindow : Window
             if (track == null || string.IsNullOrWhiteSpace(track.Title))
             {
                 TitleText.Text = "Spotify";
-                ArtistText.Text = "nada a tocar";
+                ArtistText.Text = L.NothingPlaying;
                 PlayPauseIcon.Data = PlayGeo;
                 ShuffleIcon.Fill = DimWhite;
                 ShuffleDot.Visibility = Visibility.Collapsed;
@@ -403,7 +442,7 @@ public partial class MainWindow : Window
 
             LikeIcon.Data = liked == true ? CheckCircleGeo : AddCircleGeo;
             LikeIcon.Fill = liked == true ? SpotifyGreen : (liked == false ? Subdued : DimWhite);
-            LikeButton.ToolTip = liked == true ? "Já está nos favoritos" : "Adicionar aos favoritos do Spotify";
+            LikeButton.ToolTip = liked == true ? L.TipLiked : L.TipLikeAdd;
 
             ShuffleMode mode = uiaMode;
             if (track.IsShuffle == false && mode != ShuffleMode.Unknown)
@@ -422,9 +461,9 @@ public partial class MainWindow : Window
             ShuffleSmartStar.Visibility = mode == ShuffleMode.Smart ? Visibility.Visible : Visibility.Collapsed;
             ShuffleButton.ToolTip = mode switch
             {
-                ShuffleMode.Smart => "Modo aleatório inteligente ativo",
-                ShuffleMode.On => "Modo aleatório ativo",
-                _ => "Modo aleatório",
+                ShuffleMode.Smart => L.TipShuffleSmart,
+                ShuffleMode.On => L.TipShuffleOn,
+                _ => L.TipShuffle,
             };
 
             string key = track.Title + "|" + track.Artist;
@@ -720,7 +759,7 @@ public partial class MainWindow : Window
             int index = i;
             var item = new MenuItem
             {
-                Header = i == 0 ? "Principal" : $"Monitor {i + 1}",
+                Header = i == 0 ? L.MonitorPrimary : L.MonitorN(i + 1),
                 IsCheckable = true,
                 IsChecked = _settings.MonitorIndex == i,
             };
@@ -896,9 +935,7 @@ public partial class MainWindow : Window
     {
         if (!UpdateService.IsConfigured)
         {
-            MessageBox.Show(
-                $"Versão atual: v{UpdateService.CurrentVersion}\n\nAs atualizações automáticas ainda não estão configuradas (falta definir o repositório GitHub em UpdateService.cs).",
-                "Spotify Taskbar Widget");
+            MessageBox.Show(L.UpdateNotConfigured(UpdateService.CurrentVersion), L.AppTitle);
             return;
         }
 
@@ -908,21 +945,19 @@ public partial class MainWindow : Window
             var update = await UpdateService.CheckAsync();
             if (update == null)
             {
-                MessageBox.Show($"Estás na versão mais recente (v{UpdateService.CurrentVersion}).",
-                    "Spotify Taskbar Widget");
+                MessageBox.Show(L.UpdateLatest(UpdateService.CurrentVersion), L.AppTitle);
                 return;
             }
 
             var answer = MessageBox.Show(
-                $"Nova versão v{update.Value.Version} disponível (atual: v{UpdateService.CurrentVersion}).\n\nAtualizar agora? O widget reinicia sozinho.",
-                "Spotify Taskbar Widget", MessageBoxButton.YesNo);
+                L.UpdatePrompt(update.Value.Version, UpdateService.CurrentVersion),
+                L.AppTitle, MessageBoxButton.YesNo);
             if (answer == MessageBoxResult.Yes)
                 await UpdateService.DownloadAndApplyAsync(update.Value.Url);
         }
         catch (Exception ex)
         {
-            MessageBox.Show("Não foi possível verificar atualizações: " + ex.Message,
-                "Spotify Taskbar Widget");
+            MessageBox.Show(L.UpdateError(ex.Message), L.AppTitle);
         }
         finally
         {
@@ -939,7 +974,7 @@ public partial class MainWindow : Window
             var update = await UpdateService.CheckAsync();
             if (update != null)
                 await Dispatcher.InvokeAsync(() =>
-                    UpdateMenu.Header = $"⬤ Atualizar para v{update.Value.Version}");
+                    UpdateMenu.Header = L.UpdateAvailable(update.Value.Version));
         }
         catch { }
     }

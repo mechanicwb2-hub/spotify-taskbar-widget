@@ -1,7 +1,13 @@
-# Spotify Taskbar Widget
+# Taskbar Widget for Spotify
 
-Mini-widget do Spotify embutido na barra de tarefas do Windows 11: mostra a capa,
-o título e o artista da música atual, com botões de anterior / play-pausa / seguinte.
+Mini-widget embutido na barra de tarefas do Windows 11: mostra a capa, o título
+e o artista da música atual do Spotify, com controlos completos (play/pausa,
+skips, favoritos, aleatório, repetição, volume e barra de progresso).
+
+> **Aviso:** projeto independente, **não afiliado, patrocinado nem aprovado
+> pelo Spotify AB**. "Spotify" é marca registada do Spotify AB. /
+> *Independent project, **not affiliated with, sponsored or endorsed by
+> Spotify AB**. "Spotify" is a trademark of Spotify AB.*
 
 ![preview](docs/preview.png)
 
@@ -55,10 +61,25 @@ slider de volume horizontal com preenchimento verde e bolinha branca.
   realça o item do menu se houver versão nova). A atualização descarrega o novo
   exe do GitHub Releases, substitui-se e reinicia.
 - Para publicar uma atualização:
-  1. definir o repositório em `UpdateService.cs` (`GitHubRepo`, substituir o `CHANGEME`);
-  2. subir `<Version>` no `.csproj`;
-  3. `dotnet publish` e criar uma release no GitHub com tag `vX.Y.Z`,
-     anexando o `publish\SpotifyTaskbarWidget.exe`.
+  1. subir a versão no `.csproj` (`<Version>`) e no `setup.iss` (`MyAppVersion`);
+  2. `dotnet publish SpotifyTaskbarWidget.csproj -c Release -o publish`;
+  3. `ISCC.exe setup.iss` para gerar `installer\SpotifyTaskbarWidget-Setup.exe`;
+  4. criar a release no GitHub com tag `vX.Y.Z`, anexando **os dois**:
+     `publish\SpotifyTaskbarWidget.exe` (para o auto-update) e
+     `installer\SpotifyTaskbarWidget-Setup.exe` (para novos utilizadores);
+  5. atualizar o SHA256 no manifesto winget (`winget\…installer.yaml`) se
+     for submetido ao winget.
+
+## Instalador e winget
+
+- `setup.iss` (Inno Setup): instalador per-user (sem UAC) que instala em
+  `%LOCALAPPDATA%\Programs\SpotifyTaskbarWidget`, cria atalho, oferece
+  arranque com o Windows e **instala o .NET 8 Desktop Runtime** automaticamente
+  se faltar.
+- `winget\` tem os manifestos prontos para submeter ao
+  [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs) quando a
+  release estiver pública — reduz o atrito do SmartScreen
+  (`winget install MechanicWB.TaskbarWidgetForSpotify`).
 - Se uma atualização do Spotify partir a integração por acessibilidade
   (tick/modo inteligente/volume interno), o widget degrada para o SMTC
   (play/pausa/faixa/capa continuam a funcionar) e podes corrigir as
