@@ -8,7 +8,7 @@ public class WidgetSettings
     /// <summary>Alinhar automaticamente a seguir ao botão de widgets/tempo.</summary>
     public bool AutoPosition { get; set; } = true;
 
-    /// <summary>Posição horizontal manual (em unidades WPF/DIP), usada quando AutoPosition = false.</summary>
+    /// <summary>Posição horizontal manual (px físicos de ecrã), usada quando AutoPosition = false.</summary>
     public double X { get; set; } = 150;
 
     /// <summary>Escala do widget (0.8 = pequeno, 1.0 = normal, 1.1 = grande).</summary>

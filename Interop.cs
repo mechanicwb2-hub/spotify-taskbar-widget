@@ -143,6 +143,16 @@ internal static class Interop
     public static void EnsureTopmost(IntPtr hwnd) =>
         SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 
+    private const uint SWP_NOZORDER = 0x0004;
+
+    /// <summary>Move a janela para coordenadas FÍSICAS (px). Posicionar em px puros
+    /// evita as contas erradas de DIP entre monitores com escalas diferentes.</summary>
+    public static void MoveWindowTo(IntPtr hwnd, int xPx, int yPx) =>
+        SetWindowPos(hwnd, IntPtr.Zero, xPx, yPx, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+
+    [DllImport("user32.dll")]
+    public static extern uint GetDpiForWindow(IntPtr hWnd);
+
     // Hook de eventos do sistema: reagir no instante em que a janela ativa muda
     // (clicar na taskbar traz a barra para cima do widget até re-afirmarmos)
     public delegate void WinEventDelegate(IntPtr hWinEventHook, uint eventType, IntPtr hwnd,

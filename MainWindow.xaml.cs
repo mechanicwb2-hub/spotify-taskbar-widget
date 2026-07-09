@@ -256,18 +256,6 @@ public partial class MainWindow : Window
             Interop.EnsureTopmost(_hwnd);
         }
 
-        var source = PresentationSource.FromVisual(this);
-        if (source?.CompositionTarget == null)
-            return;
-
-        // píxeis físicos -> unidades WPF (DIP)
-        Matrix m = source.CompositionTarget.TransformFromDevice;
-        Point tl = m.Transform(new Point(r.Left, r.Top));
-        Point br = m.Transform(new Point(r.Right, r.Bottom));
-
-        double trayHeight = br.Y - tl.Y;
-        double top = tl.Y + (trayHeight - ActualHeight) / 2;
-
         if (tray != _anchorsTray)
         {
             // Mudou a barra alvo (outro monitor): descartar âncoras da anterior
@@ -289,49 +277,56 @@ public partial class MainWindow : Window
             taskEndPx = _taskEndPx;
         }
 
+        // Toda a matemática de posicionamento é feita em PÍXEIS FÍSICOS da barra
+        // alvo: converter para DIP usava a escala do monitor ATUAL da janela e,
+        // ao mudar para um monitor com DPI diferente, a conta saía errada e o
+        // widget aterrava a meio do ecrã.
+        if (!Interop.GetWindowRect(_hwnd, out var w))
+            return;
+        int winWidth = w.Right - w.Left;
+        int winHeight = w.Bottom - w.Top;
+        double windowScale = Interop.GetDpiForWindow(_hwnd) / 96.0; // px por DIP, no monitor atual
+
+        int topPx = r.Top + (r.Bottom - r.Top - winHeight) / 2;
+
         bool rightAnchored = false;
-        double rightAnchorLeftLimit = tl.X + 12;
-        double left, rightLimit;
+        int rightAnchorLeftLimitPx = r.Left + 12;
+        int leftPx, rightLimitPx;
         if (!_settings.AutoPosition)
         {
-            left = Math.Max(tl.X + 4, Math.Min(_settings.X, br.X - ActualWidth - 4));
-            rightLimit = br.X - 4;
+            leftPx = (int)Math.Max(r.Left + 4, Math.Min(_settings.X, r.Right - winWidth - 4));
+            rightLimitPx = r.Right - 4;
         }
         else if (!IsTaskbarLeftAligned())
         {
             // Ícones centrados (em qualquer barra/monitor): o espaço livre está
             // à esquerda — alinhar a seguir ao botão de widgets/tempo; sem ele,
             // à borda esquerda. Nunca invadir os ícones (botão Iniciar).
-            left = widgetsRightPx.HasValue
-                ? m.Transform(new Point(widgetsRightPx.Value, 0)).X + 6
-                : tl.X + 12;
-            rightLimit = startLeftPx.HasValue
-                ? m.Transform(new Point(startLeftPx.Value, 0)).X - 6
-                : br.X - 4;
+            leftPx = widgetsRightPx.HasValue ? (int)widgetsRightPx.Value + 8 : r.Left + 12;
+            rightLimitPx = startLeftPx.HasValue ? (int)startLeftPx.Value - 8 : r.Right - 4;
         }
         else
         {
-            // Ícones alinhados à esquerda (ou barra secundária): o espaço vazio
-            // está à direita — encostar antes dos ícones do sistema/relógio,
-            // sem nunca tapar a fila de ícones das apps
+            // Ícones alinhados à esquerda: o espaço vazio está à direita —
+            // encostar antes dos ícones do sistema/relógio, sem nunca tapar
+            // a fila de ícones das apps
             rightAnchored = true;
             int? notifyLeftPx = Interop.GetTrayNotifyLeft(tray);
-            rightLimit = notifyLeftPx.HasValue
-                ? m.Transform(new Point(notifyLeftPx.Value, 0)).X - 8
-                : br.X - 220;
+            rightLimitPx = notifyLeftPx ?? (r.Right - 220);
+            rightLimitPx -= 8;
             if (taskEndPx.HasValue)
-                rightAnchorLeftLimit = m.Transform(new Point(taskEndPx.Value, 0)).X + 8;
-            left = Math.Max(rightAnchorLeftLimit, rightLimit - ActualWidth);
+                rightAnchorLeftLimitPx = (int)taskEndPx.Value + 8;
+            leftPx = Math.Max(rightAnchorLeftLimitPx, rightLimitPx - winWidth);
         }
 
         if (_spotifyPresent)
-            ApplyResponsiveLayout(rightAnchored ? rightLimit - rightAnchorLeftLimit : rightLimit - left);
-
-        if (!_dragging)
         {
-            if (Math.Abs(Top - top) > 0.5) Top = top;
-            if (Math.Abs(Left - left) > 0.5) Left = left;
+            int availPx = rightAnchored ? rightLimitPx - rightAnchorLeftLimitPx : rightLimitPx - leftPx;
+            ApplyResponsiveLayout(availPx / windowScale);
         }
+
+        if (!_dragging && (Math.Abs(w.Left - leftPx) > 1 || Math.Abs(w.Top - topPx) > 1))
+            Interop.MoveWindowTo(_hwnd, leftPx, topPx);
 
         // Esconder quando: app em ecrã inteiro; Spotify fechado (sem botão de
         // abrir); ou a barra deslizou para fora (ocultação automática)
@@ -1093,8 +1088,9 @@ public partial class MainWindow : Window
             Root.ReleaseMouseCapture();
             if (_dragMoved)
             {
-                // Fica bloqueado nesta posição (modo manual)
-                _settings.X = Left;
+                // Fica bloqueado nesta posição (modo manual); guardar em px físicos
+                if (Interop.GetWindowRect(_hwnd, out var w))
+                    _settings.X = w.Left;
                 _settings.AutoPosition = false;
                 _settings.Save();
             }
@@ -1117,6 +1113,7 @@ public partial class MainWindow : Window
     private void ResetPos_Click(object sender, RoutedEventArgs e)
     {
         _settings.AutoPosition = true;
+        _settings.MonitorIndex = 0;
         _settings.Save();
         MoveMenu.IsChecked = false;
         _moveMode = false;
