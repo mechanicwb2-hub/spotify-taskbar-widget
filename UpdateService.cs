@@ -44,7 +44,9 @@ internal static class UpdateService
         foreach (var asset in doc.RootElement.GetProperty("assets").EnumerateArray())
         {
             string name = asset.GetProperty("name").GetString() ?? "";
-            if (name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+            // Nome EXATO: a release também tem o instalador (…-Setup.exe) e
+            // "primeiro .exe" podia apanhá-lo — substituir-nos-íamos pelo setup
+            if (name.Equals("SpotifyTaskbarWidget.exe", StringComparison.OrdinalIgnoreCase))
                 return (latest, asset.GetProperty("browser_download_url").GetString() ?? "");
         }
         return null;
