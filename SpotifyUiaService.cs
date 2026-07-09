@@ -41,9 +41,12 @@ public sealed class SpotifyUiaService
     private static readonly Condition SliderCond =
         new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Slider);
 
+    // Só o grupo de CONTROLOS fica em cache (estável entre faixas). O grupo do
+    // título é recriado a cada faixa — o Chromium mantém o nó antigo legível
+    // ("zombie") durante segundos, pelo que tem de ser derivado fresco a cada
+    // leitura, e validado contra o título atual (o nome do grupo contém-no).
     private readonly object _lock = new();
     private AutomationElement? _controlsGroup;   // aleatório/anterior/play/seguinte + checkbox de repetição
-    private AutomationElement? _trackInfoGroup;  // título/artista + botão de favoritos
 
     private RangeValuePattern? _volumePattern;
     private double _volMin;
@@ -51,7 +54,10 @@ public sealed class SpotifyUiaService
 
     // ---------- Estado ----------
 
-    public (bool? Liked, ShuffleMode Shuffle, RepeatMode Repeat) GetState()
+    /// <summary>Lê o estado. <paramref name="expectedTitle"/> (vindo do SMTC, que
+    /// atualiza no instante) valida que o grupo do título já é o da faixa atual;
+    /// Fresh=false indica leitura possivelmente obsoleta (o chamador re-tenta).</summary>
+    public (bool? Liked, ShuffleMode Shuffle, RepeatMode Repeat, bool Fresh) GetState(string? expectedTitle = null)
     {
         lock (_lock)
         {
@@ -59,8 +65,15 @@ public sealed class SpotifyUiaService
             {
                 EnsureGroups();
 
+                bool fresh = true;
                 bool? liked = null;
-                var like = FindLikeButton();
+                var trackInfo = FindTrackInfoGroup();
+                if (expectedTitle is { Length: > 0 } && trackInfo != null)
+                {
+                    string groupName = trackInfo.Current.Name ?? "";
+                    fresh = groupName.Contains(expectedTitle, StringComparison.OrdinalIgnoreCase);
+                }
+                var like = FindLikeButton(trackInfo);
                 if (like != null)
                 {
                     string name = like.Current.Name ?? "";
@@ -91,12 +104,12 @@ public sealed class SpotifyUiaService
                     };
                 }
 
-                return (liked, shuffleMode, repeatMode);
+                return (liked, shuffleMode, repeatMode, fresh);
             }
             catch
             {
                 Invalidate();
-                return (null, ShuffleMode.Unknown, RepeatMode.Unknown);
+                return (null, ShuffleMode.Unknown, RepeatMode.Unknown, false);
             }
         }
     }
@@ -109,7 +122,7 @@ public sealed class SpotifyUiaService
     /// está guardado (nesse estado o botão do Spotify abre um menu).</summary>
     public bool AddToFavorites() => DoWithRetry(() =>
     {
-        var like = FindLikeButton();
+        var like = FindLikeButton(FindTrackInfoGroup());
         if (like == null) return (bool?)null; // contentor obsoleto → repetir após rebuild
 
         string name = like.Current.Name ?? "";
@@ -145,7 +158,7 @@ public sealed class SpotifyUiaService
             try
             {
                 EnsureGroups();
-                var like = FindLikeButton();
+                var like = FindLikeButton(FindTrackInfoGroup());
                 if (like == null) return false;
                 if ((like.Current.Name ?? "").Contains("playlist", StringComparison.OrdinalIgnoreCase))
                     return true; // já está nos favoritos
@@ -165,7 +178,7 @@ public sealed class SpotifyUiaService
                     Interop.SetForegroundWindow(wnd);
                     Thread.Sleep(450);
 
-                    like = FindLikeButton(); // retângulos frescos com a janela visível
+                    like = FindLikeButton(FindTrackInfoGroup()); // retângulos frescos com a janela visível
                     if (like == null) return false;
                     var r = like.Current.BoundingRectangle;
                     if (r.IsEmpty) return false;
@@ -176,7 +189,7 @@ public sealed class SpotifyUiaService
                     Interop.mouse_event(Interop.MOUSEEVENTF_LEFTUP, 0, 0, 0, UIntPtr.Zero);
                     Thread.Sleep(350);
 
-                    string after = FindLikeButton()?.Current.Name ?? "";
+                    string after = FindLikeButton(FindTrackInfoGroup())?.Current.Name ?? "";
                     return after.Contains("playlist", StringComparison.OrdinalIgnoreCase);
                 }
                 finally
@@ -328,11 +341,28 @@ public sealed class SpotifyUiaService
     // o botão de favoritos é o último (capa → links → favoritos); nos controlos,
     // o aleatório é o primeiro (aleatório → anterior → play → seguinte).
 
-    private AutomationElement? FindLikeButton()
+    /// <summary>Grupo do título/artista, derivado FRESCO a cada leitura a partir
+    /// do grupo de controlos (o Spotify recria-o a cada faixa).</summary>
+    private AutomationElement? FindTrackInfoGroup()
     {
-        var group = _trackInfoGroup;
-        if (group == null) return null;
-        var buttons = group.FindAll(TreeScope.Descendants, ButtonCond);
+        var controls = _controlsGroup;
+        if (controls == null) return null;
+        var bar = TreeWalker.ControlViewWalker.GetParent(controls);
+        if (bar == null) return null;
+        var siblings = bar.FindAll(TreeScope.Children, GroupCond);
+        foreach (AutomationElement sibling in siblings)
+        {
+            if (sibling.FindFirst(TreeScope.Descendants, HyperlinkCond) == null) continue;
+            if (sibling.FindFirst(TreeScope.Descendants, ButtonCond) == null) continue;
+            return sibling;
+        }
+        return null;
+    }
+
+    private static AutomationElement? FindLikeButton(AutomationElement? trackInfo)
+    {
+        if (trackInfo == null) return null;
+        var buttons = trackInfo.FindAll(TreeScope.Descendants, ButtonCond);
         return buttons.Count > 0 ? buttons[buttons.Count - 1] : null;
     }
 
@@ -350,18 +380,16 @@ public sealed class SpotifyUiaService
     private void Invalidate()
     {
         _controlsGroup = null;
-        _trackInfoGroup = null;
         _volumePattern = null;
     }
 
     private void EnsureGroups()
     {
-        if (_controlsGroup != null && _trackInfoGroup != null)
+        if (_controlsGroup != null)
         {
             try
             {
                 _ = _controlsGroup.Current.ControlType;
-                _ = _trackInfoGroup.Current.ControlType;
                 return;
             }
             catch (ElementNotAvailableException)
@@ -429,7 +457,6 @@ public sealed class SpotifyUiaService
             catch { _volumePattern = null; }
 
             _controlsGroup = controls;
-            _trackInfoGroup = trackInfo;
             return true;
         }
 

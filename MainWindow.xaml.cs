@@ -454,11 +454,14 @@ public partial class MainWindow : Window
             if (keyChanged || _uiaDirty || DateTime.UtcNow - _lastUiaStateAt > TimeSpan.FromSeconds(5))
             {
                 _uiaDirty = false;
-                _uiaState = await Task.Run(() => _uia.GetState());
+                var state = await Task.Run(() => _uia.GetState(track.Title));
+                _lastStateFresh = state.Fresh;
+                // Grupo ainda da faixa anterior (zombie): não mostrar o tick antigo
+                _uiaState = (state.Fresh ? state.Liked : null, state.Shuffle, state.Repeat);
                 _lastUiaStateAt = DateTime.UtcNow;
             }
             if (keyChanged)
-                _ = SettleStateAsync(); // o aria do Spotify demora segundos a refletir a faixa nova
+                _ = SettleStateAsync(); // re-ler até o Spotify renderizar a barra da faixa nova
             var (liked, uiaMode, repeatMode) = _uiaState;
             // Depois de adicionar aos favoritos, ignorar "não gostado" antigo — o
             // texto do botão do Spotify pode demorar vários segundos a atualizar
@@ -656,19 +659,21 @@ public partial class MainWindow : Window
     }
 
     private int _settleToken;
+    private bool _lastStateFresh = true;
 
-    /// <summary>Depois de uma mudança de faixa, o Spotify demora segundos a
-    /// atualizar os textos de acessibilidade — re-ler algumas vezes até assentar.
+    /// <summary>Depois de uma mudança de faixa, re-ler a cada 500 ms até o grupo
+    /// do título no Spotify já ser o da faixa nova (validado pelo título do SMTC).
     /// Uma nova mudança de faixa cancela a série anterior.</summary>
     private async Task SettleStateAsync()
     {
         int token = ++_settleToken;
-        foreach (int delay in new[] { 1500, 1500, 3000 }) // t = 1,5 s / 3 s / 6 s
+        for (int i = 0; i < 12; i++) // máx. ~6 s
         {
-            await Task.Delay(delay);
+            await Task.Delay(500);
             if (token != _settleToken) return;
             _uiaDirty = true;
             await RefreshTrackAsync();
+            if (_lastStateFresh) return;
         }
     }
 
