@@ -266,7 +266,8 @@ public partial class MainWindow : Window
         {
             if (hwnd != _hookedTray || idObject != 0 || _updateQueued) return;
             _updateQueued = true;
-            Dispatcher.BeginInvoke(UpdatePosition);
+            // Prioridade alta: cada ms conta para apanhar o início do deslize
+            Dispatcher.BeginInvoke(DispatcherPriority.Send, (Action)UpdatePosition);
         };
         _trayLocHook = Interop.SetWinEventHook(
             Interop.EVENT_OBJECT_LOCATIONCHANGE, Interop.EVENT_OBJECT_LOCATIONCHANGE,
@@ -326,13 +327,17 @@ public partial class MainWindow : Window
             return;
         }
 
+        // Fração do caminho de esconder que a barra já percorreu — o widget
+        // entra na animação neste ponto para ficar em sincronia com ela
+        double hiddenPhase = 1.0 - Math.Clamp((double)visiblePx / trayHeightPx, 0, 1);
+
         if (visiblePx <= 8)
         {
             // Assente fora do ecrã. Se o widget ainda está à vista, o esconder
             // aconteceu num salto único — animar a descida na mesma.
             if (Visibility == Visibility.Visible && !_dragging && Interop.IsAutoHideEnabled())
             {
-                StartRide(w.Left, w.Top, belowEdgeTopPx, down: true, winWidth, winHeight, monitorBottomPx);
+                StartRide(w.Left, w.Top, belowEdgeTopPx, down: true, winWidth, winHeight, monitorBottomPx, hiddenPhase);
                 return;
             }
             _barWasHidden = true;
@@ -351,7 +356,7 @@ public partial class MainWindow : Window
             // aos solavancos). Invisível = revelação em curso: esperar que
             // assente — a subida anima nessa altura.
             if (Visibility == Visibility.Visible && !_dragging && Interop.IsAutoHideEnabled())
-                StartRide(w.Left, w.Top, belowEdgeTopPx, down: true, winWidth, winHeight, monitorBottomPx);
+                StartRide(w.Left, w.Top, belowEdgeTopPx, down: true, winWidth, winHeight, monitorBottomPx, hiddenPhase);
             return;
         }
 
@@ -489,20 +494,29 @@ public partial class MainWindow : Window
 
     /// <summary>Anima o widget entre a posição assente e o fundo do ecrã (nos
     /// dois sentidos), com o recorte a fazê-lo emergir/submergir na borda.
-    /// Movimento Fluent: entradas desaceleram, saídas aceleram.</summary>
+    /// Movimento Fluent: entradas desaceleram, saídas aceleram.
+    /// startPhase (0..1): fração do caminho que a barra JÁ percorreu quando o
+    /// gatilho chegou — o primeiro passo da janela dela vem atrasado, e entrar
+    /// na curva a meio mantém o widget em sincronia em vez de a trás dela.</summary>
     private void StartRide(int leftPx, int fromTopPx, int toTopPx, bool down,
-        int winWidth, int winHeight, int monitorBottomPx)
+        int winWidth, int winHeight, int monitorBottomPx, double startPhase = 0)
     {
         var sw = Stopwatch.StartNew();
         const double DurationMs = 220; // aproxima a animação da própria barra
+        startPhase = Math.Clamp(startPhase, 0, 1);
+        // Instante da curva cujo easing corresponde à fase pedida
+        double t0 = down ? Math.Cbrt(startPhase) : 1 - Math.Cbrt(1 - startPhase);
+        double t0Ms = t0 * DurationMs;
 
         _rideAnimating = true;
         _rideDown = down;
         if (down)
             VolumePopup.IsOpen = false;
 
-        Interop.MoveWindowTo(_hwnd, leftPx, fromTopPx);
-        Interop.ClipWindowBottom(_hwnd, winWidth, winHeight, monitorBottomPx - fromTopPx);
+        double eased0 = down ? t0 * t0 * t0 : 1 - Math.Pow(1 - t0, 3);
+        int startTopPx = (int)Math.Round(fromTopPx + (toTopPx - fromTopPx) * eased0);
+        Interop.MoveWindowTo(_hwnd, leftPx, startTopPx);
+        Interop.ClipWindowBottom(_hwnd, winWidth, winHeight, monitorBottomPx - startTopPx);
         if (Visibility != Visibility.Visible)
             Visibility = Visibility.Visible;
         Interop.EnsureTopmost(_hwnd);
@@ -514,7 +528,7 @@ public partial class MainWindow : Window
         };
         _rideTimer.Tick += (_, _) =>
         {
-            double t = Math.Min(1.0, sw.ElapsedMilliseconds / DurationMs);
+            double t = Math.Min(1.0, (t0Ms + sw.ElapsedMilliseconds) / DurationMs);
             double eased = down ? t * t * t : 1 - Math.Pow(1 - t, 3);
             int topPx = (int)Math.Round(fromTopPx + (toTopPx - fromTopPx) * eased);
             Interop.MoveWindowTo(_hwnd, leftPx, topPx);
