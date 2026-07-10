@@ -1120,18 +1120,15 @@ public partial class MainWindow : Window
         if (key == _marqueeKey) return;
         _marqueeKey = key;
 
-        // Medir por métricas de fonte (FormattedText): medir o TextBlock via
-        // layout devolvia valores contaminados pela largura anterior/constrangida
-        // — o texto renderizava cortado e o scroll ficava com distância errada
-        var formatted = new FormattedText(
-            TitleText.Text,
-            System.Globalization.CultureInfo.CurrentUICulture,
-            FlowDirection.LeftToRight,
-            new Typeface(TitleText.FontFamily, TitleText.FontStyle, TitleText.FontWeight, TitleText.FontStretch),
-            TitleText.FontSize,
-            Brushes.White,
-            VisualTreeHelper.GetDpi(this).PixelsPerDip);
-        double textWidth = Math.Ceiling(formatted.WidthIncludingTrailingWhitespace) + 2;
+        // Medir a largura REALMENTE renderizada. A janela usa
+        // TextFormattingMode=Display (avanços ajustados ao píxel) e o
+        // FormattedText mede em modo Ideal — a diferença varia com a escala do
+        // ecrã e o tipo de letra, e nalgumas máquinas passava da tolerância:
+        // títulos que cabiam faziam scroll na mesma (report da comunidade).
+        // Medir o próprio TextBlock sem restrições dá o valor exato do que se
+        // desenha (está num Canvas, o layout já não o constrange).
+        TitleText.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        double textWidth = Math.Ceiling(TitleText.DesiredSize.Width);
 
         TitleShift.BeginAnimation(TranslateTransform.XProperty, null);
         TitleShift.X = 0;
