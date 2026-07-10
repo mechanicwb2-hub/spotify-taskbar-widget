@@ -298,8 +298,17 @@ public partial class MainWindow : Window
         // do ecrã; âncoras ficam intactas (o X não muda num deslize vertical).
         int trayHeightPx = r.Bottom - r.Top;
         int visiblePx = Interop.GetTaskbarVisiblePx(r, out int monitorBottomPx);
+        if (_rideUpAnimating)
+        {
+            // A animação de subida é dona da posição; só a cancelamos se a
+            // barra voltar a esconder-se a meio
+            if (visiblePx <= 8)
+                CancelRideUp();
+            return;
+        }
         if (visiblePx <= 8)
         {
+            _barWasHidden = true;
             if (Visibility != Visibility.Hidden)
             {
                 Visibility = Visibility.Hidden;
@@ -401,6 +410,34 @@ public partial class MainWindow : Window
             ApplyResponsiveLayout(availPx / windowScale);
         }
 
+        // Esconder quando: app em ecrã inteiro (irrelevante com auto-hide — as
+        // janelas maximizadas ocupam o ecrã todo e dariam falsos positivos; a
+        // visibilidade já segue a da barra); ou Spotify fechado sem botão de abrir.
+        bool hide = (!Interop.IsAutoHideEnabled() && Interop.IsForegroundFullscreen(_hwnd, tray))
+                    || (!_spotifyPresent && !_settings.ShowLauncher);
+        if (hide)
+        {
+            _barWasHidden = false;
+            if (Visibility != Visibility.Hidden)
+            {
+                Visibility = Visibility.Hidden;
+                VolumePopup.IsOpen = false;
+            }
+            return;
+        }
+
+        // Revelação da barra: ao esconder o Windows move a janela dela frame a
+        // frame (e nós seguimos), mas ao revelar TELEPORTA-A para o destino e
+        // anima só o visual — não há frames para seguir. Animamos nós a subida
+        // do widget, a emergir da borda do ecrã em sincronia com a barra.
+        if (_barWasHidden && traySettled && !_dragging)
+        {
+            _barWasHidden = false;
+            StartRideUp(leftPx, topPx, winWidth, winHeight, monitorBottomPx, trayHeightPx);
+            return;
+        }
+        _barWasHidden = false;
+
         if (!_dragging && (Math.Abs(w.Left - leftPx) > 1 || Math.Abs(w.Top - topPx) > 1))
             Interop.MoveWindowTo(_hwnd, leftPx, topPx);
 
@@ -408,20 +445,64 @@ public partial class MainWindow : Window
         // sem isto, o excedente aparecia a atravessar um monitor disposto abaixo
         Interop.ClipWindowBottom(_hwnd, winWidth, winHeight, monitorBottomPx - topPx);
 
-        // Esconder quando: app em ecrã inteiro (irrelevante com auto-hide — as
-        // janelas maximizadas ocupam o ecrã todo e dariam falsos positivos; a
-        // visibilidade já segue a da barra); ou Spotify fechado sem botão de abrir.
-        bool hide = (!Interop.IsAutoHideEnabled() && Interop.IsForegroundFullscreen(_hwnd, tray))
-                    || (!_spotifyPresent && !_settings.ShowLauncher);
-        var wanted = hide ? Visibility.Hidden : Visibility.Visible;
-        if (Visibility != wanted)
-        {
-            Visibility = wanted;
-            if (hide) VolumePopup.IsOpen = false;
-        }
+        if (Visibility != Visibility.Visible)
+            Visibility = Visibility.Visible;
+        Interop.EnsureTopmost(_hwnd);
+    }
 
-        if (!hide)
-            Interop.EnsureTopmost(_hwnd);
+    // ---------- Animação de subida (revelação da barra com ocultação automática) ----------
+
+    private bool _barWasHidden;
+    private bool _rideUpAnimating;
+    private DispatcherTimer? _rideUpTimer;
+
+    private void StartRideUp(int leftPx, int finalTopPx, int winWidth, int winHeight,
+        int monitorBottomPx, int trayHeightPx)
+    {
+        // Ponto de partida: onde o widget estaria com a barra assente FORA do
+        // ecrã (mesmo offset vertical dentro dela) — totalmente abaixo da borda
+        int startTopPx = monitorBottomPx - 2 + (trayHeightPx - winHeight) / 2;
+        var sw = Stopwatch.StartNew();
+        const double DurationMs = 220; // aproxima a animação da própria barra
+
+        _rideUpAnimating = true;
+        Interop.MoveWindowTo(_hwnd, leftPx, startTopPx);
+        Interop.ClipWindowBottom(_hwnd, winWidth, winHeight, monitorBottomPx - startTopPx);
+        if (Visibility != Visibility.Visible)
+            Visibility = Visibility.Visible;
+        Interop.EnsureTopmost(_hwnd);
+
+        _rideUpTimer?.Stop();
+        _rideUpTimer = new DispatcherTimer(DispatcherPriority.Render)
+        {
+            Interval = TimeSpan.FromMilliseconds(10)
+        };
+        _rideUpTimer.Tick += (_, _) =>
+        {
+            double t = Math.Min(1.0, sw.ElapsedMilliseconds / DurationMs);
+            double eased = 1 - Math.Pow(1 - t, 3); // ease-out cúbico, como a barra
+            int topPx = (int)Math.Round(startTopPx + (finalTopPx - startTopPx) * eased);
+            Interop.MoveWindowTo(_hwnd, leftPx, topPx);
+            Interop.ClipWindowBottom(_hwnd, winWidth, winHeight, monitorBottomPx - topPx);
+            if (t >= 1.0)
+            {
+                _rideUpTimer?.Stop();
+                _rideUpAnimating = false;
+            }
+        };
+        _rideUpTimer.Start();
+    }
+
+    private void CancelRideUp()
+    {
+        _rideUpTimer?.Stop();
+        _rideUpAnimating = false;
+        _barWasHidden = true;
+        if (Visibility != Visibility.Hidden)
+        {
+            Visibility = Visibility.Hidden;
+            VolumePopup.IsOpen = false;
+        }
     }
 
     /// <summary>
