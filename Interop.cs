@@ -68,15 +68,18 @@ internal static class Interop
         return r.Left;
     }
 
-    /// <summary>True se a barra estiver deslizada para fora do ecrã (ocultação automática).</summary>
-    public static bool IsTaskbarHidden(IntPtr tray, RECT trayRect)
+    /// <summary>True se a barra NÃO estiver totalmente assente no ecrã — escondida
+    /// OU a meio da animação de revelar/esconder (ocultação automática). Enquanto
+    /// não assenta, o widget não deve mostrar-se nem reposicionar-se.</summary>
+    public static bool IsTaskbarHiddenOrSliding(IntPtr tray, RECT trayRect)
     {
         IntPtr mon = GetTrayMonitor(trayRect);
         var mi = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
         if (!GetMonitorInfo(mon, ref mi))
             return false;
+        int trayHeight = trayRect.Bottom - trayRect.Top;
         int visible = Math.Min(trayRect.Bottom, mi.rcMonitor.Bottom) - Math.Max(trayRect.Top, mi.rcMonitor.Top);
-        return visible < 10;
+        return visible < trayHeight - 4;
     }
 
     [DllImport("user32.dll")]

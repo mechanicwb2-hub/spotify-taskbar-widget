@@ -256,6 +256,19 @@ public partial class MainWindow : Window
             Interop.EnsureTopmost(_hwnd);
         }
 
+        // Barra escondida ou a deslizar (ocultação automática): esconder e NÃO
+        // tocar em âncoras nem posição — os botões estão fora do ecrã e dariam
+        // âncoras nulas; as âncoras boas de antes continuam válidas ao voltar
+        if (Interop.IsTaskbarHiddenOrSliding(tray, r))
+        {
+            if (Visibility != Visibility.Hidden)
+            {
+                Visibility = Visibility.Hidden;
+                VolumePopup.IsOpen = false;
+            }
+            return;
+        }
+
         if (tray != _anchorsTray)
         {
             // Mudou a barra alvo (outro monitor): descartar âncoras da anterior
@@ -328,11 +341,10 @@ public partial class MainWindow : Window
         if (!_dragging && (Math.Abs(w.Left - leftPx) > 1 || Math.Abs(w.Top - topPx) > 1))
             Interop.MoveWindowTo(_hwnd, leftPx, topPx);
 
-        // Esconder quando: app em ecrã inteiro; Spotify fechado (sem botão de
-        // abrir); ou a barra deslizou para fora (ocultação automática)
+        // Esconder quando: app em ecrã inteiro; ou Spotify fechado (sem botão
+        // de abrir). A barra escondida/a deslizar já foi tratada acima.
         bool hide = Interop.IsForegroundFullscreen(_hwnd, tray)
-                    || (!_spotifyPresent && !_settings.ShowLauncher)
-                    || Interop.IsTaskbarHidden(tray, r);
+                    || (!_spotifyPresent && !_settings.ShowLauncher);
         var wanted = hide ? Visibility.Hidden : Visibility.Visible;
         if (Visibility != wanted)
         {
