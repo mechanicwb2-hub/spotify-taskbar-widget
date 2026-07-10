@@ -298,16 +298,43 @@ public partial class MainWindow : Window
         // do ecrã; âncoras ficam intactas (o X não muda num deslize vertical).
         int trayHeightPx = r.Bottom - r.Top;
         int visiblePx = Interop.GetTaskbarVisiblePx(r, out int monitorBottomPx);
-        if (_rideUpAnimating)
+
+        if (!Interop.GetWindowRect(_hwnd, out var w))
+            return;
+        int winWidth = w.Right - w.Left;
+        int winHeight = w.Bottom - w.Top;
+        // Onde o widget "estaria" com a barra assente fora do ecrã (mesmo offset
+        // vertical dentro dela): ponto de partida da subida e destino da descida
+        int belowEdgeTopPx = monitorBottomPx - 2 + (trayHeightPx - winHeight) / 2;
+
+        if (_rideAnimating)
         {
-            // A animação de subida é dona da posição; só a cancelamos se a
-            // barra voltar a esconder-se a meio
-            if (visiblePx <= 8)
-                CancelRideUp();
+            // A animação é dona da posição; se a barra inverter a meio,
+            // invertemos também, a partir de onde o widget está
+            if (_rideDown && visiblePx >= trayHeightPx - 4)
+            {
+                CancelRide();
+                StartRide(w.Left, w.Top, r.Top + (trayHeightPx - winHeight) / 2,
+                    down: false, winWidth, winHeight, monitorBottomPx);
+            }
+            else if (!_rideDown && visiblePx <= 8)
+            {
+                CancelRide();
+                StartRide(w.Left, w.Top, belowEdgeTopPx,
+                    down: true, winWidth, winHeight, monitorBottomPx);
+            }
             return;
         }
+
         if (visiblePx <= 8)
         {
+            // Assente fora do ecrã. Se o widget ainda está à vista, o esconder
+            // aconteceu num salto único — animar a descida na mesma.
+            if (Visibility == Visibility.Visible && !_dragging && Interop.IsAutoHideEnabled())
+            {
+                StartRide(w.Left, w.Top, belowEdgeTopPx, down: true, winWidth, winHeight, monitorBottomPx);
+                return;
+            }
             _barWasHidden = true;
             if (Visibility != Visibility.Hidden)
             {
@@ -316,7 +343,17 @@ public partial class MainWindow : Window
             }
             return;
         }
-        bool traySettled = visiblePx >= trayHeightPx - 4;
+
+        if (visiblePx < trayHeightPx - 4)
+        {
+            // A deslizar. Widget visível = a barra começou a esconder-se: animar
+            // a nossa descida (seguir os passos grossos da janela dela ficava
+            // aos solavancos). Invisível = revelação em curso: esperar que
+            // assente — a subida anima nessa altura.
+            if (Visibility == Visibility.Visible && !_dragging && Interop.IsAutoHideEnabled())
+                StartRide(w.Left, w.Top, belowEdgeTopPx, down: true, winWidth, winHeight, monitorBottomPx);
+            return;
+        }
 
         if (tray != _anchorsTray)
         {
@@ -330,10 +367,8 @@ public partial class MainWindow : Window
                 _taskEndPx = null;
             }
         }
-        // Consultar âncoras só com a barra assente — a meio do deslize os botões
-        // dão rects transitórios; entretanto valem as âncoras em cache
-        if (traySettled)
-            RefreshAnchors(tray);
+        // Daqui para baixo a barra está assente no ecrã — âncoras fiáveis
+        RefreshAnchors(tray);
         double? widgetsRightPx, startLeftPx, taskEndPx;
         lock (_anchorLock)
         {
@@ -346,10 +381,6 @@ public partial class MainWindow : Window
         // alvo: converter para DIP usava a escala do monitor ATUAL da janela e,
         // ao mudar para um monitor com DPI diferente, a conta saía errada e o
         // widget aterrava a meio do ecrã.
-        if (!Interop.GetWindowRect(_hwnd, out var w))
-            return;
-        int winWidth = w.Right - w.Left;
-        int winHeight = w.Bottom - w.Top;
         double windowScale = Interop.GetDpiForWindow(_hwnd) / 96.0; // px por DIP, no monitor atual
 
         int topPx = r.Top + (r.Bottom - r.Top - winHeight) / 2;
@@ -426,14 +457,13 @@ public partial class MainWindow : Window
             return;
         }
 
-        // Revelação da barra: ao esconder o Windows move a janela dela frame a
-        // frame (e nós seguimos), mas ao revelar TELEPORTA-A para o destino e
-        // anima só o visual — não há frames para seguir. Animamos nós a subida
-        // do widget, a emergir da borda do ecrã em sincronia com a barra.
-        if (_barWasHidden && traySettled && !_dragging)
+        // Revelação da barra: o Windows teleporta a janela dela para o destino
+        // e anima só o visual — não há frames para seguir. Animamos nós a
+        // subida, a emergir da borda do ecrã em sincronia com a barra.
+        if (_barWasHidden && !_dragging)
         {
             _barWasHidden = false;
-            StartRideUp(leftPx, topPx, winWidth, winHeight, monitorBottomPx, trayHeightPx);
+            StartRide(leftPx, belowEdgeTopPx, topPx, down: false, winWidth, winHeight, monitorBottomPx);
             return;
         }
         _barWasHidden = false;
@@ -450,59 +480,63 @@ public partial class MainWindow : Window
         Interop.EnsureTopmost(_hwnd);
     }
 
-    // ---------- Animação de subida (revelação da barra com ocultação automática) ----------
+    // ---------- Animação de deslize (ocultação automática da barra) ----------
 
     private bool _barWasHidden;
-    private bool _rideUpAnimating;
-    private DispatcherTimer? _rideUpTimer;
+    private bool _rideAnimating;
+    private bool _rideDown;
+    private DispatcherTimer? _rideTimer;
 
-    private void StartRideUp(int leftPx, int finalTopPx, int winWidth, int winHeight,
-        int monitorBottomPx, int trayHeightPx)
+    /// <summary>Anima o widget entre a posição assente e o fundo do ecrã (nos
+    /// dois sentidos), com o recorte a fazê-lo emergir/submergir na borda.
+    /// Movimento Fluent: entradas desaceleram, saídas aceleram.</summary>
+    private void StartRide(int leftPx, int fromTopPx, int toTopPx, bool down,
+        int winWidth, int winHeight, int monitorBottomPx)
     {
-        // Ponto de partida: onde o widget estaria com a barra assente FORA do
-        // ecrã (mesmo offset vertical dentro dela) — totalmente abaixo da borda
-        int startTopPx = monitorBottomPx - 2 + (trayHeightPx - winHeight) / 2;
         var sw = Stopwatch.StartNew();
         const double DurationMs = 220; // aproxima a animação da própria barra
 
-        _rideUpAnimating = true;
-        Interop.MoveWindowTo(_hwnd, leftPx, startTopPx);
-        Interop.ClipWindowBottom(_hwnd, winWidth, winHeight, monitorBottomPx - startTopPx);
+        _rideAnimating = true;
+        _rideDown = down;
+        if (down)
+            VolumePopup.IsOpen = false;
+
+        Interop.MoveWindowTo(_hwnd, leftPx, fromTopPx);
+        Interop.ClipWindowBottom(_hwnd, winWidth, winHeight, monitorBottomPx - fromTopPx);
         if (Visibility != Visibility.Visible)
             Visibility = Visibility.Visible;
         Interop.EnsureTopmost(_hwnd);
 
-        _rideUpTimer?.Stop();
-        _rideUpTimer = new DispatcherTimer(DispatcherPriority.Render)
+        _rideTimer?.Stop();
+        _rideTimer = new DispatcherTimer(DispatcherPriority.Render)
         {
             Interval = TimeSpan.FromMilliseconds(10)
         };
-        _rideUpTimer.Tick += (_, _) =>
+        _rideTimer.Tick += (_, _) =>
         {
             double t = Math.Min(1.0, sw.ElapsedMilliseconds / DurationMs);
-            double eased = 1 - Math.Pow(1 - t, 3); // ease-out cúbico, como a barra
-            int topPx = (int)Math.Round(startTopPx + (finalTopPx - startTopPx) * eased);
+            double eased = down ? t * t * t : 1 - Math.Pow(1 - t, 3);
+            int topPx = (int)Math.Round(fromTopPx + (toTopPx - fromTopPx) * eased);
             Interop.MoveWindowTo(_hwnd, leftPx, topPx);
             Interop.ClipWindowBottom(_hwnd, winWidth, winHeight, monitorBottomPx - topPx);
             if (t >= 1.0)
             {
-                _rideUpTimer?.Stop();
-                _rideUpAnimating = false;
+                _rideTimer?.Stop();
+                _rideAnimating = false;
+                if (down)
+                {
+                    _barWasHidden = true;
+                    Visibility = Visibility.Hidden;
+                }
             }
         };
-        _rideUpTimer.Start();
+        _rideTimer.Start();
     }
 
-    private void CancelRideUp()
+    private void CancelRide()
     {
-        _rideUpTimer?.Stop();
-        _rideUpAnimating = false;
-        _barWasHidden = true;
-        if (Visibility != Visibility.Hidden)
-        {
-            Visibility = Visibility.Hidden;
-            VolumePopup.IsOpen = false;
-        }
+        _rideTimer?.Stop();
+        _rideAnimating = false;
     }
 
     /// <summary>
