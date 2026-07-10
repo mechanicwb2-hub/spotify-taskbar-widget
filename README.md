@@ -12,11 +12,14 @@ a seekable progress bar.
 
 ## Install
 
-- Download **`SpotifyTaskbarWidget-Setup.exe`** from the
+- **Microsoft Store (recommended):**
+  [**Taskbar Widget for Spotify**](https://apps.microsoft.com/detail/9P12TLJZG2CJ) —
+  one-click install, automatic updates, and works with Smart App Control enabled.
+- **Direct download:** grab **`SpotifyTaskbarWidget-Setup.exe`** from the
   [latest release](https://github.com/mechanicwb2-hub/spotify-taskbar-widget/releases/latest)
-  and run it — the installer sets everything up per-user (no admin rights) and
-  installs the .NET 8 Desktop Runtime automatically if it's missing.
-- winget (pending review): `winget install MechanicWB.TaskbarWidgetForSpotify`
+  and run it — per-user install (no admin rights), installs the .NET 8 Desktop
+  Runtime automatically if missing, and self-updates from GitHub Releases.
+- **winget** (pending review): `winget install MechanicWB.TaskbarWidgetForSpotify`
 - Requires Windows 11 and the Spotify desktop app.
 - UI languages: English and Portuguese (follows your Windows language).
 

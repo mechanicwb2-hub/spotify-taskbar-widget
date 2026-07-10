@@ -23,9 +23,10 @@ I always hated that the Windows 11 taskbar has all that dead space next to the w
 **The nice part:** no Spotify login, no API keys, no account setup. It reads the Windows media session and Spotify's own desktop app directly. Install and it just works.
 
 **Free and open source (MIT):**
-https://github.com/mechanicwb2-hub/spotify-taskbar-widget
+- Microsoft Store: https://apps.microsoft.com/detail/9P12TLJZG2CJ
+- GitHub (source + installer): https://github.com/mechanicwb2-hub/spotify-taskbar-widget
 
-Installer in the releases page (installs the .NET runtime automatically if needed). winget support is pending review (`winget install MechanicWB.TaskbarWidgetForSpotify`).
+The Store version installs in one click and updates automatically. winget support is pending review.
 
 Unofficial project, not affiliated with Spotify. Feedback and bug reports very welcome — and if you find it useful, there's a Ko-fi link in the repo ☕
 
@@ -39,7 +40,8 @@ Windows 11 taskbar + Spotify, the way it should've always been:
 
 Free & open source. No login needed.
 
-⬇️ https://github.com/mechanicwb2-hub/spotify-taskbar-widget
+🛒 Microsoft Store: https://apps.microsoft.com/detail/9P12TLJZG2CJ
+⬇️ GitHub: https://github.com/mechanicwb2-hub/spotify-taskbar-widget
 
 *(anexar: docs/demo.gif)*
 
