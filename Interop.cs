@@ -68,18 +68,52 @@ internal static class Interop
         return r.Left;
     }
 
-    /// <summary>True se a barra NÃO estiver totalmente assente no ecrã — escondida
-    /// OU a meio da animação de revelar/esconder (ocultação automática). Enquanto
-    /// não assenta, o widget não deve mostrar-se nem reposicionar-se.</summary>
-    public static bool IsTaskbarHiddenOrSliding(IntPtr tray, RECT trayRect)
+    /// <summary>Píxeis da barra atualmente dentro do ecrã (para saber se está
+    /// assente, escondida, ou a meio da animação de revelar/esconder).
+    /// Devolve também o fundo do monitor "casa" da barra, para o recorte.</summary>
+    public static int GetTaskbarVisiblePx(RECT trayRect, out int monitorBottomPx)
     {
         IntPtr mon = GetTrayMonitor(trayRect);
         var mi = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
         if (!GetMonitorInfo(mon, ref mi))
-            return false;
-        int trayHeight = trayRect.Bottom - trayRect.Top;
-        int visible = Math.Min(trayRect.Bottom, mi.rcMonitor.Bottom) - Math.Max(trayRect.Top, mi.rcMonitor.Top);
-        return visible < trayHeight - 4;
+        {
+            monitorBottomPx = trayRect.Bottom;
+            return trayRect.Bottom - trayRect.Top; // sem info: assumir assente
+        }
+        monitorBottomPx = mi.rcMonitor.Bottom;
+        return Math.Min(trayRect.Bottom, mi.rcMonitor.Bottom) - Math.Max(trayRect.Top, mi.rcMonitor.Top);
+    }
+
+    [DllImport("user32.dll")]
+    public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
+    public const uint EVENT_OBJECT_LOCATIONCHANGE = 0x800B;
+
+    [DllImport("gdi32.dll")]
+    private static extern IntPtr CreateRectRgn(int left, int top, int right, int bottom);
+
+    [DllImport("user32.dll")]
+    private static extern int SetWindowRgn(IntPtr hWnd, IntPtr hRgn, bool bRedraw);
+
+    private static bool _windowClipped;
+
+    /// <summary>Recorta a janela ao que cabe acima do fundo do ecrã enquanto a
+    /// barra desliza (ocultação automática). Sem recorte, a parte que já "saiu"
+    /// continuava a desenhar-se — visível num monitor disposto abaixo.
+    /// O sistema fica dono da região após SetWindowRgn (não a libertar).</summary>
+    public static void ClipWindowBottom(IntPtr hwnd, int widthPx, int heightPx, int visibleHeightPx)
+    {
+        if (visibleHeightPx >= heightPx)
+        {
+            if (_windowClipped)
+            {
+                SetWindowRgn(hwnd, IntPtr.Zero, true);
+                _windowClipped = false;
+            }
+            return;
+        }
+        SetWindowRgn(hwnd, CreateRectRgn(0, 0, widthPx, Math.Max(0, visibleHeightPx)), true);
+        _windowClipped = true;
     }
 
     [DllImport("user32.dll")]

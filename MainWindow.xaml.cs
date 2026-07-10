@@ -190,7 +190,11 @@ public partial class MainWindow : Window
         _winEventHook = Interop.SetWinEventHook(
             Interop.EVENT_SYSTEM_FOREGROUND, Interop.EVENT_SYSTEM_FOREGROUND,
             IntPtr.Zero, _winEventProc, 0, 0, Interop.WINEVENT_OUTOFCONTEXT);
-        Closed += (_, _) => { if (_winEventHook != IntPtr.Zero) Interop.UnhookWinEvent(_winEventHook); };
+        Closed += (_, _) =>
+        {
+            if (_winEventHook != IntPtr.Zero) Interop.UnhookWinEvent(_winEventHook);
+            if (_trayLocHook != IntPtr.Zero) Interop.UnhookWinEvent(_trayLocHook);
+        };
 
         await _media.InitializeAsync();
         _media.Changed += () =>
@@ -241,11 +245,42 @@ public partial class MainWindow : Window
     private IntPtr _ownerTray;
     private DateTime _anchorsMissingSince = DateTime.MinValue;
 
+    // Hook de movimento da barra: quando ela desliza (ocultação automática),
+    // os eventos chegam ao milissegundo e o widget "cavalga" a animação
+    private IntPtr _trayLocHook;
+    private IntPtr _hookedTray;
+    private Interop.WinEventDelegate? _trayLocProc;
+    private bool _updateQueued;
+
+    private void EnsureTrayLocationHook(IntPtr tray)
+    {
+        if (tray == _hookedTray) return;
+        if (_trayLocHook != IntPtr.Zero)
+        {
+            Interop.UnhookWinEvent(_trayLocHook);
+            _trayLocHook = IntPtr.Zero;
+        }
+        _hookedTray = tray;
+        uint tid = Interop.GetWindowThreadProcessId(tray, out uint pid);
+        _trayLocProc ??= (_, _, hwnd, idObject, _, _, _) =>
+        {
+            if (hwnd != _hookedTray || idObject != 0 || _updateQueued) return;
+            _updateQueued = true;
+            Dispatcher.BeginInvoke(UpdatePosition);
+        };
+        _trayLocHook = Interop.SetWinEventHook(
+            Interop.EVENT_OBJECT_LOCATIONCHANGE, Interop.EVENT_OBJECT_LOCATIONCHANGE,
+            IntPtr.Zero, _trayLocProc, pid, tid, Interop.WINEVENT_OUTOFCONTEXT);
+    }
+
     private void UpdatePosition()
     {
+        _updateQueued = false;
         IntPtr tray = GetTargetTray();
         if (tray == IntPtr.Zero || !Interop.GetWindowRect(tray, out var r))
             return;
+
+        EnsureTrayLocationHook(tray);
 
         // Janela "owned" pela taskbar: o gestor de janelas mantém-na SEMPRE acima
         // do dono — elimina o flicker de z-order por construção. Se o Explorer
@@ -257,10 +292,13 @@ public partial class MainWindow : Window
             Interop.EnsureTopmost(_hwnd);
         }
 
-        // Barra escondida ou a deslizar (ocultação automática): esconder e NÃO
-        // tocar em âncoras nem posição — os botões estão fora do ecrã e dariam
-        // âncoras nulas; as âncoras boas de antes continuam válidas ao voltar
-        if (Interop.IsTaskbarHiddenOrSliding(tray, r))
+        // Ocultação automática: o widget "cavalga" a barra — o hook de movimento
+        // chama isto a cada frame da animação e o Y segue o rect atual, por isso
+        // ele desce e sobe colado à barra. Só se esconde quando ela assenta fora
+        // do ecrã; âncoras ficam intactas (o X não muda num deslize vertical).
+        int trayHeightPx = r.Bottom - r.Top;
+        int visiblePx = Interop.GetTaskbarVisiblePx(r, out int monitorBottomPx);
+        if (visiblePx <= 8)
         {
             if (Visibility != Visibility.Hidden)
             {
@@ -269,6 +307,7 @@ public partial class MainWindow : Window
             }
             return;
         }
+        bool traySettled = visiblePx >= trayHeightPx - 4;
 
         if (tray != _anchorsTray)
         {
@@ -282,7 +321,10 @@ public partial class MainWindow : Window
                 _taskEndPx = null;
             }
         }
-        RefreshAnchors(tray);
+        // Consultar âncoras só com a barra assente — a meio do deslize os botões
+        // dão rects transitórios; entretanto valem as âncoras em cache
+        if (traySettled)
+            RefreshAnchors(tray);
         double? widgetsRightPx, startLeftPx, taskEndPx;
         lock (_anchorLock)
         {
@@ -361,6 +403,10 @@ public partial class MainWindow : Window
 
         if (!_dragging && (Math.Abs(w.Left - leftPx) > 1 || Math.Abs(w.Top - topPx) > 1))
             Interop.MoveWindowTo(_hwnd, leftPx, topPx);
+
+        // Durante o deslize, recortar a parte do widget que já saiu do ecrã —
+        // sem isto, o excedente aparecia a atravessar um monitor disposto abaixo
+        Interop.ClipWindowBottom(_hwnd, winWidth, winHeight, monitorBottomPx - topPx);
 
         // Esconder quando: app em ecrã inteiro (irrelevante com auto-hide — as
         // janelas maximizadas ocupam o ecrã todo e dariam falsos positivos; a
