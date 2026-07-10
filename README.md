@@ -89,6 +89,13 @@ Smart Shuffle, internal volume), the widget degrades gracefully to SMTC —
 play/pause, track info and art keep working — and the heuristics in
 `SpotifyUiaService.cs` can be fixed and shipped through the auto-updater.
 
+## Troubleshooting
+
+Something not working? See **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** —
+covers "nothing playing", antivirus flags, Smart App Control, positioning
+and more. Still stuck?
+[Open an issue](https://github.com/mechanicwb2-hub/spotify-taskbar-widget/issues).
+
 ## Support
 
 The widget is free and open source. If you find it useful, you can support
