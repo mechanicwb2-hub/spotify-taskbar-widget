@@ -109,6 +109,30 @@ internal static class Interop
         public int X, Y;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct APPBARDATA
+    {
+        public uint cbSize;
+        public IntPtr hWnd;
+        public uint uCallbackMessage;
+        public uint uEdge;
+        public RECT rc;
+        public int lParam;
+    }
+
+    [DllImport("shell32.dll")]
+    private static extern UIntPtr SHAppBarMessage(uint dwMessage, ref APPBARDATA pData);
+
+    /// <summary>True se a ocultação automática da barra estiver ativa. Nesse modo,
+    /// as janelas maximizadas ocupam o ecrã todo e "parecem" fullscreen — o teste
+    /// de ecrã inteiro deixa de ser fiável (e é redundante: a visibilidade do
+    /// widget já segue a da barra).</summary>
+    public static bool IsAutoHideEnabled()
+    {
+        var data = new APPBARDATA { cbSize = (uint)Marshal.SizeOf<APPBARDATA>() };
+        return ((ulong)SHAppBarMessage(4 /*ABM_GETSTATE*/, ref data) & 1 /*ABS_AUTOHIDE*/) != 0;
+    }
+
     public const byte VK_SHIFT = 0x10;
     public const byte VK_MENU = 0x12;
     public const byte VK_B = 0x42;

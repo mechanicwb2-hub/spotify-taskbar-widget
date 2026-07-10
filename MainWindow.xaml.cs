@@ -239,6 +239,7 @@ public partial class MainWindow : Window
     }
 
     private IntPtr _ownerTray;
+    private DateTime _anchorsMissingSince = DateTime.MinValue;
 
     private void UpdatePosition()
     {
@@ -312,6 +313,26 @@ public partial class MainWindow : Window
         }
         else if (!IsTaskbarLeftAligned())
         {
+            // Numa barra centrada o botão Iniciar existe sempre — âncora nula
+            // significa que a leitura ainda não chegou (arranque / primeiro
+            // reveal do auto-hide): esperar em vez de posicionar às cegas
+            // (o widget aparecia encostado à esquerda e "saltava" depois)
+            if (!startLeftPx.HasValue)
+            {
+                if (_anchorsMissingSince == DateTime.MinValue)
+                    _anchorsMissingSince = DateTime.UtcNow;
+                if (DateTime.UtcNow - _anchorsMissingSince < TimeSpan.FromSeconds(4))
+                {
+                    if (Visibility != Visibility.Hidden)
+                        Visibility = Visibility.Hidden;
+                    return;
+                }
+            }
+            else
+            {
+                _anchorsMissingSince = DateTime.MinValue;
+            }
+
             // Ícones centrados (em qualquer barra/monitor): o espaço livre está
             // à esquerda — alinhar a seguir ao botão de widgets/tempo; sem ele,
             // à borda esquerda. Nunca invadir os ícones (botão Iniciar).
@@ -341,9 +362,10 @@ public partial class MainWindow : Window
         if (!_dragging && (Math.Abs(w.Left - leftPx) > 1 || Math.Abs(w.Top - topPx) > 1))
             Interop.MoveWindowTo(_hwnd, leftPx, topPx);
 
-        // Esconder quando: app em ecrã inteiro; ou Spotify fechado (sem botão
-        // de abrir). A barra escondida/a deslizar já foi tratada acima.
-        bool hide = Interop.IsForegroundFullscreen(_hwnd, tray)
+        // Esconder quando: app em ecrã inteiro (irrelevante com auto-hide — as
+        // janelas maximizadas ocupam o ecrã todo e dariam falsos positivos; a
+        // visibilidade já segue a da barra); ou Spotify fechado sem botão de abrir.
+        bool hide = (!Interop.IsAutoHideEnabled() && Interop.IsForegroundFullscreen(_hwnd, tray))
                     || (!_spotifyPresent && !_settings.ShowLauncher);
         var wanted = hide ? Visibility.Hidden : Visibility.Visible;
         if (Visibility != wanted)
