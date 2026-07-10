@@ -906,13 +906,19 @@ public partial class MainWindow : Window
     /// como no Spotify; caso contrário fica estático.</summary>
     private void UpdateMarquee()
     {
-        TitleText.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-        double textWidth = TitleText.DesiredSize.Width;
         double clipWidth = TextStack.Width;
-
         string key = $"{TitleText.Text}|{clipWidth:0}";
         if (key == _marqueeKey) return;
         _marqueeKey = key;
+
+        // Repor a largura automática ANTES de medir: a largura fixa da faixa
+        // anterior limitava a medição — títulos mais compridos ficavam com o
+        // scroll curto (fim nunca aparecia) e mais curtos deixavam o texto
+        // em branco no fim do ciclo
+        TitleText.Width = double.NaN;
+        TitleText.TextTrimming = TextTrimming.None;
+        TitleText.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        double textWidth = TitleText.DesiredSize.Width;
 
         TitleShift.BeginAnimation(TranslateTransform.XProperty, null);
         TitleShift.X = 0;
@@ -937,7 +943,6 @@ public partial class MainWindow : Window
         }
         else
         {
-            TitleText.Width = double.NaN;
             TitleText.TextTrimming = TextTrimming.CharacterEllipsis;
         }
     }
