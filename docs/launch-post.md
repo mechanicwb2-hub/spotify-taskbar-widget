@@ -1,4 +1,4 @@
-# Posts de lançamento
+ # Posts de lançamento
 
 ## ⚠️ Onde publicar (r/Windows11 NÃO permite — regra 7, autopromoção)
 
@@ -46,6 +46,38 @@ I always hated that the Windows 11 taskbar has all that dead space next to the w
 The Store version installs in one click and updates automatically. winget support is pending review.
 
 Unofficial project, not affiliated with Spotify. Feedback and bug reports very welcome — and if you find it useful, there's a Ko-fi link in the repo ☕
+
+---
+
+## Reddit — r/Fiz_Isto (em português)
+
+**Título:**
+> Fiz um widget grátis que mete os controlos do Spotify dentro da barra de tarefas do Windows 11
+
+**Corpo:**
+
+Sempre me irritou a barra de tarefas do Windows 11 ter aquele espaço morto ao lado do botão do tempo — e o miniplayer do próprio Spotify flutuar *por cima* das janelas. Por isso fiz um widget que vive **dentro da barra**: sempre visível, nunca a atrapalhar.
+
+*(anexar: docs/demo.gif)*
+
+**O que faz:**
+- Capa, título e artista da música atual, diretamente na barra
+- Play/pausa, anterior/seguinte e barra de progresso com salto
+- ❤️ Adicionar aos favoritos — com o estado real (visto verde quando já está guardada)
+- Os 3 modos aleatórios do Spotify (incluindo o Aleatório Inteligente) e repetição
+- Volume sincronizado com o slider do próprio Spotify
+- Posiciona-se sozinho ao lado do tempo em qualquer resolução; adapta-se a barras alinhadas à esquerda, ocultação automática e vários monitores
+- Tema claro/escuro, tamanho ajustável, botões configuráveis, PT/EN
+
+**A parte boa:** não precisa de login do Spotify, nem chaves de API, nem conta nenhuma. Lê a sessão de media do Windows e a própria app do Spotify. Instala-se e simplesmente funciona.
+
+**Grátis e open source (MIT):**
+- Microsoft Store: https://apps.microsoft.com/detail/9P12TLJZG2CJ
+- GitHub (código + instalador): https://github.com/mechanicwb2-hub/spotify-taskbar-widget
+
+A versão da Store instala-se num clique e atualiza-se sozinha.
+
+Projeto independente, não afiliado ao Spotify. Feedback e bug reports são muito bem-vindos — e se for útil, há um Ko-fi no repositório ☕
 
 ---
 
