@@ -203,6 +203,15 @@ public partial class MainWindow : Window
         AddHandler(ToolTipService.ToolTipClosingEvent,
             new ToolTipEventHandler((_, _) => _tooltipOpen = false), true);
 
+        // O popup do volume tem de ganhar à barra (que também é topmost com a
+        // ocultação automática): re-afirmá-lo no instante em que abre
+        VolumePopup.Opened += (_, _) =>
+        {
+            if (VolumePopup.Child != null &&
+                PresentationSource.FromVisual(VolumePopup.Child) is HwndSource src)
+                Interop.EnsureTopmost(src.Handle);
+        };
+
         UpdatePosition();
         _positionTimer.Tick += (_, _) =>
         {
@@ -562,7 +571,9 @@ public partial class MainWindow : Window
 
         if (Visibility != Visibility.Visible)
             Visibility = Visibility.Visible;
-        if (!_tooltipOpen)
+        // Re-afirmar por cima de um tooltip/popup aberto empurra-o para trás
+        // da barra (a barra em ocultação automática também vive no topmost)
+        if (!_tooltipOpen && !VolumePopup.IsOpen)
             Interop.EnsureTopmost(_hwnd);
     }
 
@@ -1160,6 +1171,20 @@ public partial class MainWindow : Window
     }
 
     private void VolumePopup_MouseLeave(object sender, MouseEventArgs e) => VolumePopup.IsOpen = false;
+
+    /// <summary>Roda do rato sobre o botão/popup de volume: fechado abre (com o
+    /// volume atual carregado), aberto ajusta ±5 — como no próprio Spotify.</summary>
+    private void Volume_MouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        e.Handled = true;
+        if (!VolumePopup.IsOpen)
+        {
+            Volume_Click(sender, null!);
+            return;
+        }
+        if (_volLoading) return;
+        VolumeSlider.Value = Math.Clamp(VolumeSlider.Value + (e.Delta > 0 ? 5 : -5), 0, 100);
+    }
 
     // ---------- Tema (barra clara/escura) ----------
 
