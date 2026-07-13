@@ -39,5 +39,8 @@ public partial class App : Application
         };
 
         base.OnStartup(e);
+
+        // Uma janela de widget por barra selecionada nas definições
+        SpotifyTaskbarWidget.MainWindow.SyncToMonitors();
     }
 }

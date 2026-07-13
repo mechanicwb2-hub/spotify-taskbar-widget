@@ -14,8 +14,12 @@ public class WidgetSettings
     /// <summary>Escala do widget (0.8 = pequeno, 1.0 = normal, 1.1 = grande).</summary>
     public double Scale { get; set; } = 1.0;
 
-    /// <summary>Barra de tarefas onde o widget vive: 0 = principal, 1+ = secundárias.</summary>
+    /// <summary>Compatibilidade com versões antigas — hoje vale <see cref="Monitors"/>.</summary>
     public int MonitorIndex { get; set; } = 0;
+
+    /// <summary>Barras de tarefas com widget (0 = principal, 1+ = secundárias).
+    /// Uma janela por entrada; lista vazia = ficheiro antigo, migra de MonitorIndex.</summary>
+    public List<int> Monitors { get; set; } = new();
 
     /// <summary>Com o Spotify fechado: true mostra um botão "Abrir Spotify"; false esconde o widget.</summary>
     public bool ShowLauncher { get; set; } = false;
@@ -36,25 +40,39 @@ public class WidgetSettings
 
     private static string FilePath => Path.Combine(Dir, "settings.json");
 
+    /// <summary>Instância única partilhada por todas as janelas do widget.</summary>
+    public static WidgetSettings Shared => _shared ??= Load();
+    private static WidgetSettings? _shared;
+
+    /// <summary>Disparado depois de cada Save — as outras janelas re-aplicam a UI.</summary>
+    public static event Action? Changed;
+
     public static WidgetSettings Load()
     {
+        WidgetSettings s;
         try
         {
-            return JsonSerializer.Deserialize<WidgetSettings>(File.ReadAllText(FilePath)) ?? new WidgetSettings();
+            s = JsonSerializer.Deserialize<WidgetSettings>(File.ReadAllText(FilePath)) ?? new WidgetSettings();
         }
         catch
         {
-            return new WidgetSettings();
+            s = new WidgetSettings();
         }
+        if (s.Monitors.Count == 0)
+            s.Monitors.Add(s.MonitorIndex); // migração do formato antigo
+        s.Monitors = s.Monitors.Distinct().OrderBy(i => i).ToList();
+        return s;
     }
 
     public void Save()
     {
+        MonitorIndex = Monitors.Count > 0 ? Monitors[0] : 0; // downgrade-safe
         try
         {
             Directory.CreateDirectory(Dir);
             File.WriteAllText(FilePath, JsonSerializer.Serialize(this));
         }
         catch { }
+        Changed?.Invoke();
     }
 }

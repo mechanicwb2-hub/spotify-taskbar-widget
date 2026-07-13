@@ -36,8 +36,34 @@ public partial class MainWindow : Window
 
     private readonly MediaService _media = new();
     private readonly SpotifyUiaService _uia = new();
-    private readonly WidgetSettings _settings = WidgetSettings.Load();
+    private readonly WidgetSettings _settings = WidgetSettings.Shared;
     private bool? _liked;
+
+    /// <summary>Barra desta janela (0 = principal, 1+ = secundárias). Cada
+    /// monitor selecionado nas definições tem a sua própria instância.</summary>
+    public int TrayIndex { get; set; }
+
+    /// <summary>Fecho programático (sincronização de monitores) — não recriar.</summary>
+    internal bool ClosedByApp;
+
+    private static readonly List<MainWindow> Instances = new();
+    private static bool _updateCheckStarted;
+    private static bool _recreatePending;
+
+    /// <summary>Garante uma janela por barra selecionada nas definições:
+    /// cria as que faltam, fecha as que sobram.</summary>
+    public static void SyncToMonitors()
+    {
+        var wanted = WidgetSettings.Shared.Monitors;
+        foreach (var win in Instances.Where(w => !wanted.Contains(w.TrayIndex)).ToList())
+        {
+            win.ClosedByApp = true;
+            win.Close();
+        }
+        foreach (int idx in wanted)
+            if (!Instances.Any(w => w.TrayIndex == idx))
+                new MainWindow { TrayIndex = idx }.Show();
+    }
 
     private readonly DispatcherTimer _positionTimer = new() { Interval = TimeSpan.FromMilliseconds(600) };
     private readonly DispatcherTimer _trackTimer = new() { Interval = TimeSpan.FromSeconds(3) };
@@ -99,6 +125,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        Instances.Add(this);
         Loaded += OnLoaded;
     }
 
@@ -163,18 +190,11 @@ public partial class MainWindow : Window
         {
             AutoStartMenu.IsChecked = IsAutoStartEnabled();
         }
-        LauncherMenu.IsChecked = _settings.ShowLauncher;
-        ProgressMenu.IsChecked = _settings.ShowProgress;
         ApplyThemeIfChanged();
         RebuildMonitorMenu();
-        BtnLikeMenu.IsChecked = _settings.ShowLike;
-        BtnShuffleMenu.IsChecked = _settings.ShowShuffle;
-        BtnPrevMenu.IsChecked = _settings.ShowPrev;
-        BtnNextMenu.IsChecked = _settings.ShowNext;
-        BtnRepeatMenu.IsChecked = _settings.ShowRepeat;
-        BtnVolumeMenu.IsChecked = _settings.ShowVolume;
-        ApplyScale();
-        UpdateSizeChecks();
+        ApplySettingsUi();
+        // As definições são partilhadas: quando outra janela grava, re-aplicar
+        WidgetSettings.Changed += OnSettingsChanged;
 
         // Re-afirmar o topmost por cima de um tooltip aberto empurra-o para
         // trás da barra (report da comunidade) — suspender enquanto durar
@@ -216,22 +236,49 @@ public partial class MainWindow : Window
         _trackTimer.Tick += (_, _) => _ = RefreshTrackAsync();
         _trackTimer.Start();
 
-        if (!PackagedApp.IsPackaged)
+        if (!PackagedApp.IsPackaged && !_updateCheckStarted)
+        {
+            _updateCheckStarted = true; // com várias janelas, só uma verifica
             _ = CheckUpdatesQuietlyAsync();
+        }
 
         await RefreshTrackAsync();
     }
 
+    /// <summary>Estado da UI que espelha as definições partilhadas (menus,
+    /// escala) — chamado no arranque e sempre que qualquer janela grava.</summary>
+    private void ApplySettingsUi()
+    {
+        LauncherMenu.IsChecked = _settings.ShowLauncher;
+        ProgressMenu.IsChecked = _settings.ShowProgress;
+        BtnLikeMenu.IsChecked = _settings.ShowLike;
+        BtnShuffleMenu.IsChecked = _settings.ShowShuffle;
+        BtnPrevMenu.IsChecked = _settings.ShowPrev;
+        BtnNextMenu.IsChecked = _settings.ShowNext;
+        BtnRepeatMenu.IsChecked = _settings.ShowRepeat;
+        BtnVolumeMenu.IsChecked = _settings.ShowVolume;
+        ApplyScale();
+        UpdateSizeChecks();
+    }
+
+    private void OnSettingsChanged()
+    {
+        ApplySettingsUi();
+        UpdatePosition();
+        _ = RefreshTrackAsync();
+    }
+
     // ---------- Posicionamento na barra de tarefas ----------
 
-    /// <summary>Barra de tarefas escolhida nas definições (principal ou secundária).</summary>
+    /// <summary>Barra de tarefas desta janela (principal ou secundária).
+    /// Zero quando a barra alvo não existe (monitor desligado) — a janela
+    /// esconde-se e volta quando ela reaparecer.</summary>
     private IntPtr GetTargetTray()
     {
-        if (_settings.MonitorIndex > 0)
+        if (TrayIndex > 0)
         {
             var secondaries = Interop.GetSecondaryTrays();
-            if (_settings.MonitorIndex <= secondaries.Count)
-                return secondaries[_settings.MonitorIndex - 1];
+            return TrayIndex <= secondaries.Count ? secondaries[TrayIndex - 1] : IntPtr.Zero;
         }
         return Interop.FindWindow("Shell_TrayWnd", null);
     }
@@ -287,7 +334,15 @@ public partial class MainWindow : Window
         _updateQueued = false;
         IntPtr tray = GetTargetTray();
         if (tray == IntPtr.Zero || !Interop.GetWindowRect(tray, out var r))
+        {
+            // Barra alvo indisponível (monitor desligado / Explorer a reiniciar)
+            if (Visibility != Visibility.Hidden)
+            {
+                Visibility = Visibility.Hidden;
+                VolumePopup.IsOpen = false;
+            }
             return;
+        }
 
         EnsureTrayLocationHook(tray);
 
@@ -1259,11 +1314,14 @@ public partial class MainWindow : Window
         RebuildMonitorMenu();
     }
 
-    /// <summary>Um item por barra de tarefas existente (a lista pode mudar ao ligar/desligar monitores).</summary>
+    /// <summary>Um item POR CADA barra de tarefas existente, com seleção
+    /// múltipla — cada monitor marcado tem a sua instância do widget
+    /// (pedido da comunidade). Pelo menos um fica sempre marcado.</summary>
     private void RebuildMonitorMenu()
     {
         MonitorMenu.Items.Clear();
         int count = Interop.GetSecondaryTrays().Count;
+        var monitors = _settings.Monitors;
         for (int i = 0; i <= count; i++)
         {
             int index = i;
@@ -1271,13 +1329,27 @@ public partial class MainWindow : Window
             {
                 Header = i == 0 ? L.MonitorPrimary : L.MonitorN(i + 1),
                 IsCheckable = true,
-                IsChecked = _settings.MonitorIndex == i,
+                IsChecked = monitors.Contains(i),
+                StaysOpenOnClick = true, // marcar vários sem o menu fechar
             };
-            item.Click += (_, _) =>
+            item.Click += (s, _) =>
             {
-                _settings.MonitorIndex = index;
+                if (monitors.Contains(index))
+                {
+                    if (monitors.Count == 1)
+                    {
+                        ((MenuItem)s).IsChecked = true; // pelo menos um monitor
+                        return;
+                    }
+                    monitors.Remove(index);
+                }
+                else
+                {
+                    monitors.Add(index);
+                    monitors.Sort();
+                }
                 _settings.Save();
-                UpdatePosition();
+                SyncToMonitors();
             };
             MonitorMenu.Items.Add(item);
         }
@@ -1378,8 +1450,10 @@ public partial class MainWindow : Window
     private void ResetPos_Click(object sender, RoutedEventArgs e)
     {
         _settings.AutoPosition = true;
-        _settings.MonitorIndex = 0;
+        _settings.Monitors.Clear();
+        _settings.Monitors.Add(0);
         _settings.Save();
+        SyncToMonitors();
         MoveMenu.IsChecked = false;
         _moveMode = false;
         Root.Cursor = Cursors.Hand;
@@ -1553,25 +1627,39 @@ public partial class MainWindow : Window
         base.OnClosed(e);
         _positionTimer.Stop();
         _trackTimer.Stop();
-        if (!App.IntentionalExit)
-            _ = RecreateAfterTaskbarRestartAsync(); // Explorer reiniciou e levou a janela
+        WidgetSettings.Changed -= OnSettingsChanged;
+        Instances.Remove(this);
+        if (!App.IntentionalExit && !ClosedByApp && !_recreatePending)
+        {
+            // Explorer reiniciou e levou as janelas (são owned pelas barras):
+            // um só waiter recria o conjunto todo quando a barra voltar
+            _recreatePending = true;
+            _ = RecreateAfterTaskbarRestartAsync();
+        }
     }
 
     /// <summary>Como o widget é owned pela taskbar, um reinício do Explorer
-    /// destrói a janela — esperar pela barra nova e recriar o widget.</summary>
+    /// destrói a(s) janela(s) — esperar pela barra nova e recriar o conjunto.</summary>
     private static async Task RecreateAfterTaskbarRestartAsync()
     {
-        for (int i = 0; i < 120; i++)
+        try
         {
-            await Task.Delay(1000);
-            if (Interop.FindWindow("Shell_TrayWnd", null) != IntPtr.Zero)
+            for (int i = 0; i < 120; i++)
             {
-                await Task.Delay(2000); // deixar a barra nova assentar
-                new MainWindow().Show();
-                return;
+                await Task.Delay(1000);
+                if (Interop.FindWindow("Shell_TrayWnd", null) != IntPtr.Zero)
+                {
+                    await Task.Delay(2000); // deixar a barra (e as secundárias) assentar
+                    SyncToMonitors();
+                    return;
+                }
             }
+            App.IntentionalExit = true;
+            Application.Current.Shutdown();
         }
-        App.IntentionalExit = true;
-        Application.Current.Shutdown();
+        finally
+        {
+            _recreatePending = false;
+        }
     }
 }
