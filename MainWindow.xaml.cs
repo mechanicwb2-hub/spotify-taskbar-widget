@@ -85,6 +85,7 @@ public partial class MainWindow : Window
     private IntPtr _winEventHook;
 
     private readonly object _anchorLock = new();
+    private int _widgetsMisses;
     private double? _widgetsRightPx;
     private double? _startLeftPx;
     private double? _taskEndPx;
@@ -174,6 +175,13 @@ public partial class MainWindow : Window
         BtnVolumeMenu.IsChecked = _settings.ShowVolume;
         ApplyScale();
         UpdateSizeChecks();
+
+        // Re-afirmar o topmost por cima de um tooltip aberto empurra-o para
+        // trás da barra (report da comunidade) — suspender enquanto durar
+        AddHandler(ToolTipService.ToolTipOpeningEvent,
+            new ToolTipEventHandler((_, _) => _tooltipOpen = true), true);
+        AddHandler(ToolTipService.ToolTipClosingEvent,
+            new ToolTipEventHandler((_, _) => _tooltipOpen = false), true);
 
         UpdatePosition();
         _positionTimer.Tick += (_, _) =>
@@ -304,9 +312,14 @@ public partial class MainWindow : Window
             return;
         int winWidth = w.Right - w.Left;
         int winHeight = w.Bottom - w.Top;
+
+        // Centrar na banda VISÍVEL inferior da barra (48 DIP no Win11): no
+        // 25H2 a janela da barra ficou mais alta do que a barra desenhada e a
+        // centragem no rect todo deixava o widget a flutuar acima (issue #9)
+        int barBandPx = Math.Min(trayHeightPx, (int)Math.Round(48 * Interop.GetDpiForWindow(tray) / 96.0));
         // Onde o widget "estaria" com a barra assente fora do ecrã (mesmo offset
         // vertical dentro dela): ponto de partida da subida e destino da descida
-        int belowEdgeTopPx = monitorBottomPx - 2 + (trayHeightPx - winHeight) / 2;
+        int belowEdgeTopPx = monitorBottomPx - 2 + (barBandPx - winHeight) / 2;
 
         if (_rideAnimating)
         {
@@ -315,7 +328,7 @@ public partial class MainWindow : Window
             if (_rideDown && visiblePx >= trayHeightPx - 4)
             {
                 CancelRide();
-                StartRide(w.Left, w.Top, r.Top + (trayHeightPx - winHeight) / 2,
+                StartRide(w.Left, w.Top, r.Bottom - barBandPx + (barBandPx - winHeight) / 2,
                     down: false, winWidth, winHeight, monitorBottomPx);
             }
             else if (!_rideDown && visiblePx <= 8)
@@ -367,6 +380,7 @@ public partial class MainWindow : Window
             _lastAnchorQuery = DateTime.MinValue;
             lock (_anchorLock)
             {
+                _widgetsMisses = 0;
                 _widgetsRightPx = null;
                 _startLeftPx = null;
                 _taskEndPx = null;
@@ -388,7 +402,7 @@ public partial class MainWindow : Window
         // widget aterrava a meio do ecrã.
         double windowScale = Interop.GetDpiForWindow(_hwnd) / 96.0; // px por DIP, no monitor atual
 
-        int topPx = r.Top + (r.Bottom - r.Top - winHeight) / 2;
+        int topPx = r.Bottom - barBandPx + (barBandPx - winHeight) / 2;
 
         bool rightAnchored = false;
         int rightAnchorLeftLimitPx = r.Left + 12;
@@ -443,7 +457,18 @@ public partial class MainWindow : Window
         if (_spotifyPresent)
         {
             int availPx = rightAnchored ? rightLimitPx - rightAnchorLeftLimitPx : rightLimitPx - leftPx;
-            ApplyResponsiveLayout(availPx / windowScale);
+            if (!ApplyResponsiveLayout(availPx / windowScale))
+            {
+                // Numa barra lotada nem a versão mínima cabe: esconder em vez
+                // de transbordar para cima do relógio/ícones (issue #10)
+                _barWasHidden = false;
+                if (Visibility != Visibility.Hidden)
+                {
+                    Visibility = Visibility.Hidden;
+                    VolumePopup.IsOpen = false;
+                }
+                return;
+            }
         }
 
         // Esconder quando: app em ecrã inteiro (irrelevante com auto-hide — as
@@ -482,8 +507,11 @@ public partial class MainWindow : Window
 
         if (Visibility != Visibility.Visible)
             Visibility = Visibility.Visible;
-        Interop.EnsureTopmost(_hwnd);
+        if (!_tooltipOpen)
+            Interop.EnsureTopmost(_hwnd);
     }
+
+    private bool _tooltipOpen;
 
     // ---------- Animação de deslize (ocultação automática da barra) ----------
 
@@ -557,8 +585,9 @@ public partial class MainWindow : Window
     /// Encaixa o widget no espaço disponível: primeiro encolhe o texto até um
     /// mínimo; se mesmo assim não couber, esconde os botões menos importantes
     /// (volume → aleatório → favoritos → seguinte → anterior).
+    /// Devolve false quando nem a versão mínima cabe no espaço dado.
     /// </summary>
-    private void ApplyResponsiveLayout(double availableDip)
+    private bool ApplyResponsiveLayout(double availableDip)
     {
         double s = _settings.Scale;
         double avail = availableDip / s; // trabalhar em unidades pré-escala
@@ -568,6 +597,8 @@ public partial class MainWindow : Window
         const double BasePart = 16 + 34 + 15; // padding + capa + margens do texto
 
         double used = BasePart + PlayBtn + MinTextWidth;
+        if (avail < used)
+            return false;
 
         bool prev = false, next = false, like = false, shuffle = false, repeat = false, volume = false;
         Take(ref prev, _settings.ShowPrev);
@@ -590,6 +621,7 @@ public partial class MainWindow : Window
             TextStack.Width = text;
             UpdateMarquee();
         }
+        return true;
 
         void Take(ref bool flag, bool wanted)
         {
@@ -625,7 +657,21 @@ public partial class MainWindow : Window
                 var (widgetsRight, startLeft, taskButtonsRight) = TaskbarAnchors.Get(tray);
                 lock (_anchorLock)
                 {
-                    _widgetsRightPx = widgetsRight;
+                    // Âncora do botão de widgets "pegajosa": as leituras de UIA
+                    // falham transitoriamente (shell ocupada, pós-reveal) e cair
+                    // logo para null punha o widget EM CIMA do botão do tempo.
+                    // Só aceitar o desaparecimento ao fim de 3 falhas seguidas
+                    // (~15s) — aí sim, foi mesmo desativado nas definições.
+                    if (widgetsRight.HasValue)
+                    {
+                        _widgetsRightPx = widgetsRight;
+                        _widgetsMisses = 0;
+                    }
+                    else if (_widgetsRightPx.HasValue && ++_widgetsMisses >= 3)
+                    {
+                        _widgetsRightPx = null;
+                        _widgetsMisses = 0;
+                    }
                     _startLeftPx = startLeft;
                     _taskEndPx = taskButtonsRight;
                 }
@@ -1235,7 +1281,17 @@ public partial class MainWindow : Window
             };
             MonitorMenu.Items.Add(item);
         }
-        MonitorMenu.Visibility = count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        if (count == 0)
+        {
+            // Sem barras secundárias o Windows não tem onde ancorar o widget
+            // noutro ecrã — explicar como ativar em vez de esconder o menu
+            // (utilizadores achavam que a funcionalidade não existia, issue #11)
+            MonitorMenu.Items.Add(new MenuItem
+            {
+                Header = L.MonitorHint,
+                IsEnabled = false,
+            });
+        }
     }
 
     private void ContextMenu_Closed(object sender, RoutedEventArgs e) => RestoreForeground();

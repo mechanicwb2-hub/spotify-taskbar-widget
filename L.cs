@@ -22,6 +22,9 @@ internal static class L
     public static string MonitorMenu => Pt ? "Monitor" : "Monitor";
     public static string MonitorPrimary => Pt ? "Principal" : "Primary";
     public static string MonitorN(int n) => Pt ? $"Monitor {n}" : $"Monitor {n}";
+    public static string MonitorHint => Pt
+        ? "Só há barra de tarefas num ecrã. Para mudar de monitor, ativa\n\"Mostrar a minha barra de tarefas em todos os ecrãs\"\nem Definições → Personalização → Barra de tarefas"
+        : "There's only a taskbar on one screen. To move monitors, enable\n\"Show my taskbar on all displays\"\nin Settings → Personalization → Taskbar";
     public static string SizeMenu => Pt ? "Tamanho" : "Size";
     public static string SizeSmall => Pt ? "Pequeno" : "Small";
     public static string SizeNormal => Pt ? "Normal" : "Normal";

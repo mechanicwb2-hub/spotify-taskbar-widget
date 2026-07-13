@@ -256,8 +256,28 @@ internal static class Interop
         GetClassName(fg, sb, sb.Capacity);
         string cls = sb.ToString();
         if (cls is "Progman" or "WorkerW" or "Shell_TrayWnd" or "Shell_SecondaryTrayWnd"
-            or "XamlExplorerHostIslandWindow" or "Windows.UI.Core.CoreWindow")
+            or "XamlExplorerHostIslandWindow")
             return false;
+
+        // CoreWindow só é inocente quando pertence à shell (menu Iniciar,
+        // pesquisa, centro de notificações). Jogos/apps UWP em ecrã inteiro
+        // (ex.: Forza da Store) usam a MESMA classe — excluí-la às cegas
+        // deixava o widget visível por cima do jogo (issue #5).
+        if (cls is "Windows.UI.Core.CoreWindow" or "ApplicationFrameWindow")
+        {
+            GetWindowThreadProcessId(fg, out uint pid);
+            try
+            {
+                string proc = System.Diagnostics.Process.GetProcessById((int)pid).ProcessName;
+                if (proc is "explorer" or "StartMenuExperienceHost" or "SearchHost"
+                    or "ShellExperienceHost" or "ShellHost" or "SearchApp" or "LockApp")
+                    return false;
+            }
+            catch
+            {
+                return false; // processo já morreu: tratar como shell (inócuo)
+            }
+        }
 
         IntPtr monFg = MonitorFromWindow(fg, MONITOR_DEFAULTTONEAREST);
         IntPtr monTray = GetWindowRect(tray, out RECT tr)
