@@ -14,7 +14,7 @@
   <!-- Identidade oficial do Partner Center (Store ID: 9P12TLJZG2CJ) -->
   <Identity Name="MechanicWB.TaskbarWidgetforSpotify"
             Publisher="CN=4C013262-AF61-4EA1-BDBB-78F7F8DE42C7"
-            Version="1.2.7.0"
+            Version="1.2.8.0"
             ProcessorArchitecture="x64" />
 
   <Properties>
