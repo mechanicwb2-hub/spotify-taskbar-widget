@@ -27,14 +27,9 @@ public partial class App : Application
 
         DispatcherUnhandledException += (_, args) =>
         {
-            try
-            {
-                var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "SpotifyTaskbarWidget");
-                Directory.CreateDirectory(dir);
-                File.AppendAllText(Path.Combine(dir, "errors.log"),
-                    $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {args.Exception}\n");
-            }
-            catch { }
+            // Escrita partilhada com o Diag: dedup de repetições (um timer em
+            // erro dispara várias vezes por segundo) e teto de tamanho
+            Diag.Log(args.Exception.ToString());
             args.Handled = true;
         };
 

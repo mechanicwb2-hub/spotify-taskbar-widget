@@ -43,14 +43,19 @@ internal static class TaskbarAnchors
                 new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button));
             foreach (AutomationElement button in buttons)
             {
-                string cls;
-                try { cls = button.Current.ClassName ?? ""; }
-                catch { continue; }
-                if (!cls.StartsWith("Taskbar.TaskListButton", StringComparison.Ordinal)) continue;
-                var r = button.Current.BoundingRectangle;
-                if (r.IsEmpty) continue;
-                if (taskButtonsRight is not double cur || r.Right > cur)
-                    taskButtonsRight = r.Right;
+                // Um botão pode morrer a MEIO da enumeração (apps a abrir/fechar);
+                // sem o try por botão, o rebentar aqui descartava a leitura toda
+                // — incluindo as âncoras já lidas com sucesso acima
+                try
+                {
+                    string cls = button.Current.ClassName ?? "";
+                    if (!cls.StartsWith("Taskbar.TaskListButton", StringComparison.Ordinal)) continue;
+                    var r = button.Current.BoundingRectangle;
+                    if (r.IsEmpty) continue;
+                    if (taskButtonsRight is not double cur || r.Right > cur)
+                        taskButtonsRight = r.Right;
+                }
+                catch { }
             }
         }
         catch

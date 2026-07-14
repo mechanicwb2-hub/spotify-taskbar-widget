@@ -52,6 +52,29 @@ public sealed class MediaService
         PickSession();
     }
 
+    private readonly object _pickLock = new();
+
+    /// <summary>Dessubscreve tudo — sem isto, uma janela fechada ficava presa
+    /// na memória pelos eventos WinRT e continuava a processar sessões.</summary>
+    public void Shutdown()
+    {
+        lock (_pickLock)
+        {
+            var old = _session;
+            _session = null;
+            if (old != null)
+            {
+                try
+                {
+                    old.MediaPropertiesChanged -= OnMediaPropertiesChanged;
+                    old.PlaybackInfoChanged -= OnPlaybackInfoChanged;
+                    old.TimelinePropertiesChanged -= OnTimelineChanged;
+                }
+                catch { }
+            }
+        }
+    }
+
     private void PickSession()
     {
         if (_manager == null) return;
@@ -83,24 +106,35 @@ public sealed class MediaService
             Diag.Once("get-sessions", "Reading media sessions failed: " + ex.Message);
         }
 
-        var old = _session;
-        if (old != null)
+        // SessionsChanged chega em threads WinRT em rajadas (arranque/fecho do
+        // Spotify): sem lock, duas trocas entrelaçadas duplicavam subscrições
+        // ou deixavam handlers presos numa sessão morta
+        lock (_pickLock)
         {
-            try
+            var old = _session;
+            if (ReferenceEquals(old, chosen))
             {
-                old.MediaPropertiesChanged -= OnMediaPropertiesChanged;
-                old.PlaybackInfoChanged -= OnPlaybackInfoChanged;
-                old.TimelinePropertiesChanged -= OnTimelineChanged;
+                if (chosen == null) Changed?.Invoke();
+                return;
             }
-            catch { }
-        }
+            if (old != null)
+            {
+                try
+                {
+                    old.MediaPropertiesChanged -= OnMediaPropertiesChanged;
+                    old.PlaybackInfoChanged -= OnPlaybackInfoChanged;
+                    old.TimelinePropertiesChanged -= OnTimelineChanged;
+                }
+                catch { }
+            }
 
-        _session = chosen;
-        if (chosen != null)
-        {
-            chosen.MediaPropertiesChanged += OnMediaPropertiesChanged;
-            chosen.PlaybackInfoChanged += OnPlaybackInfoChanged;
-            chosen.TimelinePropertiesChanged += OnTimelineChanged;
+            _session = chosen;
+            if (chosen != null)
+            {
+                chosen.MediaPropertiesChanged += OnMediaPropertiesChanged;
+                chosen.PlaybackInfoChanged += OnPlaybackInfoChanged;
+                chosen.TimelinePropertiesChanged += OnTimelineChanged;
+            }
         }
 
         Changed?.Invoke();

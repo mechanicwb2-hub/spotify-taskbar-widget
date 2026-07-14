@@ -67,6 +67,10 @@ public partial class MainWindow : Window
         foreach (int idx in wanted)
             if (!Instances.Any(w => w.TrayIndex == idx))
                 new MainWindow { TrayIndex = idx }.Show();
+        // A escolha de barra de cada janela pode ter mudado (ex.: o órfão que
+        // tinha recuado para a principal tem de a largar JÁ, não daqui a 2s)
+        foreach (var win in Instances)
+            win._trayCache = IntPtr.Zero;
     }
 
     private readonly DispatcherTimer _positionTimer = new() { Interval = TimeSpan.FromMilliseconds(600) };
@@ -105,6 +109,8 @@ public partial class MainWindow : Window
     // ~2 s e contradizem o novo estado — são ignoradas nesse intervalo
     private DateTime _playToggledAt = DateTime.MinValue;
     private DateTime _likedOptimisticAt = DateTime.MinValue;
+    private DateTime _shuffleToggledAt = DateTime.MinValue;
+    private DateTime _seekAt = DateTime.MinValue;
 
     private bool AcceptPlayingState(bool incoming) =>
         incoming == _isPlayingUi || DateTime.UtcNow - _playToggledAt > TimeSpan.FromSeconds(2);
@@ -215,6 +221,20 @@ public partial class MainWindow : Window
         // As definições são partilhadas: quando outra janela grava, re-aplicar
         WidgetSettings.Changed += OnSettingsChanged;
 
+        // Captura de rato roubada a meio de um arrasto (menu, overlay do
+        // sistema): sem isto _dragging ficava presa e o widget deixava de se
+        // reposicionar; o próximo clique ainda gravava uma posição fantasma
+        Root.LostMouseCapture += (_, _) =>
+        {
+            // Só quando roubada a MEIO do arrasto — no largar normal o
+            // _dragging já está falso e a gravação da posição segue intacta
+            if (_dragging)
+            {
+                _dragging = false;
+                _dragMoved = false;
+            }
+        };
+
         // Re-afirmar o topmost por cima de um tooltip aberto empurra-o para
         // trás da barra (report da comunidade) — suspender enquanto durar
         AddHandler(ToolTipService.ToolTipOpeningEvent,
@@ -226,6 +246,7 @@ public partial class MainWindow : Window
         // ocultação automática): re-afirmá-lo no instante em que abre
         VolumePopup.Opened += (_, _) =>
         {
+            _wheelAccum = 0;
             if (VolumePopup.Child != null &&
                 PresentationSource.FromVisual(VolumePopup.Child) is HwndSource src)
                 Interop.EnsureTopmost(src.Handle);
@@ -265,9 +286,8 @@ public partial class MainWindow : Window
             if (_trayLocHook != IntPtr.Zero) Interop.UnhookWinEvent(_trayLocHook);
         };
 
-        await _media.InitializeAsync();
-        if (_closed)
-            return; // fechada durante o await (sync de monitores / restart do Explorer)
+        // Subscrever ANTES de aguardar a inicialização: com o retry do SMTC, o
+        // init pode demorar minutos — o widget tem de reagir logo que ele pegue
         _mediaChanged = () =>
         {
             _artDirty = true;
@@ -281,12 +301,17 @@ public partial class MainWindow : Window
         _trackTimer.Tick += (_, _) => _ = RefreshTrackAsync();
         _trackTimer.Start();
 
+        var mediaInit = _media.InitializeAsync();
+
         if (!PackagedApp.IsPackaged && !_updateCheckStarted)
         {
             _updateCheckStarted = true; // com várias janelas, só uma verifica
             _ = CheckUpdatesQuietlyAsync();
         }
 
+        await mediaInit;
+        if (_closed)
+            return; // fechada durante o await (sync de monitores / restart do Explorer)
         await RefreshTrackAsync();
     }
 
@@ -311,7 +336,10 @@ public partial class MainWindow : Window
     private void OnSettingsChanged()
     {
         ApplySettingsUi();
-        UpdatePosition();
+        // Reposicionar só DEPOIS do layout assentar: mudar tamanho/escala e
+        // medir a janela no mesmo instante usava as dimensões antigas e o
+        // widget aterrava desalinhado até ao tick seguinte
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, (Action)UpdatePosition);
         _ = RefreshTrackAsync();
     }
 
@@ -345,9 +373,14 @@ public partial class MainWindow : Window
             var secondaries = Interop.GetSecondaryTrays();
             if (TrayIndex <= secondaries.Count)
                 return secondaries[TrayIndex - 1];
-            bool primaryCovered = Instances.Any(w => w != this &&
-                (w.TrayIndex == 0 || (w.TrayIndex > secondaries.Count && w.TrayIndex < TrayIndex)));
-            if (primaryCovered)
+            // O recuo só serve para a app não ficar TODA invisível: se outra
+            // janela ainda tem barra (principal ou secundária viva), ou há um
+            // órfão de índice menor que recua primeiro, esta esconde-se
+            bool someoneVisible = Instances.Any(w => w != this &&
+                (w.TrayIndex == 0 || w.TrayIndex <= secondaries.Count));
+            bool lowerOrphan = Instances.Any(w => w != this &&
+                w.TrayIndex > secondaries.Count && w.TrayIndex < TrayIndex);
+            if (someoneVisible || lowerOrphan)
                 return IntPtr.Zero;
         }
         return Interop.FindWindow("Shell_TrayWnd", null);
@@ -402,6 +435,9 @@ public partial class MainWindow : Window
     private void UpdatePosition()
     {
         _updateQueued = false;
+        if (_closed)
+            return; // dispatch em atraso numa janela fechada: sem isto podia
+                    // re-registar hooks num hwnd morto (crash em callback GC'd)
         IntPtr tray = GetTargetTray();
         if (tray == IntPtr.Zero || !Interop.GetWindowRect(tray, out var r))
         {
@@ -474,11 +510,20 @@ public partial class MainWindow : Window
         // entra na animação neste ponto para ficar em sincronia com ela
         double hiddenPhase = 1.0 - Math.Clamp((double)visiblePx / trayHeightPx, 0, 1);
 
+        // Interação em curso "pina" o widget: esconder a meio de um arrasto do
+        // slider/menu fechava-lhe o popup nas mãos (e um arrasto de move-mode
+        // escondido perdia a captura do rato e ficava _dragging preso). Quando
+        // a interação acabar, o tick seguinte esconde normalmente.
+        bool pinned = _dragging || VolumePopup.IsOpen ||
+                      (Root.ContextMenu?.IsOpen ?? false);
+
         if (visiblePx <= 8)
         {
+            if (pinned)
+                return;
             // Assente fora do ecrã. Se o widget ainda está à vista, o esconder
             // aconteceu num salto único — animar a descida na mesma.
-            if (Visibility == Visibility.Visible && !_dragging && Interop.IsAutoHideEnabled())
+            if (Visibility == Visibility.Visible && Interop.IsAutoHideEnabled())
             {
                 StartRide(w.Left, w.Top, belowEdgeTopPx, down: true, winWidth, winHeight, monitorBottomPx, hiddenPhase);
                 return;
@@ -494,7 +539,7 @@ public partial class MainWindow : Window
             // a nossa descida (seguir os passos grossos da janela dela ficava
             // aos solavancos). Invisível = revelação em curso: esperar que
             // assente — a subida anima nessa altura.
-            if (Visibility == Visibility.Visible && !_dragging && Interop.IsAutoHideEnabled())
+            if (Visibility == Visibility.Visible && !pinned && Interop.IsAutoHideEnabled())
                 StartRide(w.Left, w.Top, belowEdgeTopPx, down: true, winWidth, winHeight, monitorBottomPx, hiddenPhase);
             return;
         }
@@ -632,12 +677,14 @@ public partial class MainWindow : Window
 
     private bool _tooltipOpen;
 
-    /// <summary>Esconde o widget e fecha SEMPRE o popup de volume — todos os
-    /// caminhos de esconder passam por aqui para não divergirem (havia um que
-    /// deixava o popup órfão a flutuar sobre a barra).</summary>
+    /// <summary>Esconde o widget e fecha SEMPRE o popup de volume e o menu de
+    /// contexto — todos os caminhos de esconder passam por aqui para não
+    /// divergirem (havia caminhos que deixavam popups órfãos a flutuar).</summary>
     private void HideWidget()
     {
         VolumePopup.IsOpen = false;
+        if (Root.ContextMenu is { IsOpen: true } menu)
+            menu.IsOpen = false;
         if (Visibility != Visibility.Hidden)
             Visibility = Visibility.Hidden;
     }
@@ -781,9 +828,15 @@ public partial class MainWindow : Window
     /// Atualiza as âncoras da barra (botão de widgets e botão Iniciar) em background,
     /// no máximo a cada 5 segundos — as consultas de UI Automation não são gratuitas.
     /// </summary>
+    private int _startMissingReads;
+
     private void RefreshAnchors(IntPtr tray)
     {
-        if (_anchorQueryRunning || (DateTime.UtcNow - _lastAnchorQuery).TotalSeconds < 5)
+        if ((DateTime.UtcNow - _lastAnchorQuery).TotalSeconds < 5)
+            return;
+        // Watchdog: se uma query pendurou (UIA contra um Explorer moribundo), a
+        // flag não pode prender as âncoras para sempre — após 15s arranca outra
+        if (_anchorQueryRunning && (DateTime.UtcNow - _lastAnchorQuery).TotalSeconds < 15)
             return;
 
         _anchorQueryRunning = true;
@@ -795,17 +848,24 @@ public partial class MainWindow : Window
                 var (ok, widgetsRight, startLeft, taskButtonsRight) = TaskbarAnchors.Get(tray);
                 lock (_anchorLock)
                 {
-                    // Leitura falhada (ou suspeita: nem o botão Iniciar veio,
-                    // e ele existe sempre) → manter TODAS as âncoras anteriores.
-                    // Falha transitória de UIA ≠ layout da barra mudou; era isto
-                    // que punha o widget em cima do botão do tempo e o fazia
-                    // piscar 4s no gate das âncoras.
-                    if (ok && (startLeft.HasValue || !_startLeftPx.HasValue))
-                    {
-                        _widgetsRightPx = widgetsRight; // null aqui = desativado mesmo
-                        _startLeftPx = startLeft;
-                        _taskEndPx = taskButtonsRight;
-                    }
+                    // A barra alvo mudou enquanto a query corria: estes valores
+                    // são coordenadas do monitor errado — deitar fora
+                    if (tray != _anchorsTray)
+                        return;
+                    // Leitura falhada → mantêm-se TODAS as âncoras anteriores
+                    // (falha transitória de UIA ≠ layout da barra mudou; era
+                    // isto que punha o widget em cima do botão do tempo)
+                    if (!ok)
+                        return;
+                    // O Iniciar existe sempre — uma leitura OK sem ele é suspeita;
+                    // mas aceitar à 3ª seguida, senão um Iniciar realmente
+                    // escondido (shells modificadas) congelava as âncoras todas
+                    if (!startLeft.HasValue && _startLeftPx.HasValue && ++_startMissingReads < 3)
+                        return;
+                    _startMissingReads = 0;
+                    _widgetsRightPx = widgetsRight; // null aqui = desativado mesmo
+                    _startLeftPx = startLeft;
+                    _taskEndPx = taskButtonsRight;
                 }
             }
             finally
@@ -819,7 +879,7 @@ public partial class MainWindow : Window
 
     private async Task RefreshTrackAsync()
     {
-        if (_refreshing) return;
+        if (_refreshing || _closed) return;
         _refreshing = true;
         try
         {
@@ -898,8 +958,12 @@ public partial class MainWindow : Window
                     pos = TimeSpan.Zero;
                     posAt = DateTime.UtcNow;
                 }
-                _basePosition = pos;
-                _basePositionAt = posAt;
+                // Após um seek, ignorar posições fotografadas ANTES do salto
+                if (!(DateTime.UtcNow - _seekAt < TimeSpan.FromSeconds(3) && posAt < _seekAt))
+                {
+                    _basePosition = pos;
+                    _basePositionAt = posAt;
+                }
                 _isPlayingUi = track?.IsPlaying == true;
             }
             UpdateProgressUi();
@@ -961,10 +1025,16 @@ public partial class MainWindow : Window
             LikeButton.ToolTip = liked == true ? L.TipLiked : L.TipLikeAdd;
 
             ShuffleMode mode = uiaMode;
-            if (track.IsShuffle == false && mode != ShuffleMode.Unknown)
-                mode = ShuffleMode.Off;
-            else if (track.IsShuffle == true && mode is ShuffleMode.Off or ShuffleMode.Unknown)
-                mode = ShuffleMode.On;
+            // A rede de segurança do SMTC atrasa-se vários segundos após um
+            // clique — sobrepor-se a uma leitura UIA fresca fazia o ícone
+            // piscar On→Off→On; janela de graça como no play/pause
+            if (DateTime.UtcNow - _shuffleToggledAt > TimeSpan.FromSeconds(4))
+            {
+                if (track.IsShuffle == false && mode != ShuffleMode.Unknown)
+                    mode = ShuffleMode.Off;
+                else if (track.IsShuffle == true && mode is ShuffleMode.Off or ShuffleMode.Unknown)
+                    mode = ShuffleMode.On;
+            }
 
             ApplyShuffleVisual(mode);
 
@@ -975,9 +1045,16 @@ public partial class MainWindow : Window
                 byte[]? bytes = null;
                 try { bytes = await _media.GetThumbnailAsync().WaitAsync(TimeSpan.FromSeconds(5)); }
                 catch (TimeoutException) { }
+                BitmapImage? art = null;
                 if (bytes != null)
                 {
-                    ArtBrush.ImageSource = ToBitmap(bytes);
+                    // Miniaturas truncadas/corrompidas acontecem em transições
+                    // de faixa — não podem rebentar o refresh inteiro
+                    try { art = ToBitmap(bytes); } catch { }
+                }
+                if (art != null)
+                {
+                    ArtBrush.ImageSource = art;
                     ArtImage.Visibility = Visibility.Visible;
                     ArtPlaceholder.Visibility = Visibility.Collapsed;
                 }
@@ -1056,6 +1133,10 @@ public partial class MainWindow : Window
         try { tlMaybe = await Task.Run(() => _media.GetTimeline()).WaitAsync(TimeSpan.FromSeconds(3)); }
         catch (TimeoutException) { }
         if (tlMaybe is not { } tl) return;
+        // Depois de um seek, snapshots ANTERIORES ao salto ainda chegam durante
+        // uns segundos — aplicá-los fazia a barra recuar e voltar a saltar
+        if (DateTime.UtcNow - _seekAt < TimeSpan.FromSeconds(3) && tl.PositionAtUtc < _seekAt)
+            return;
         _duration = tl.Duration;
         if (AcceptPlayingState(tl.IsPlaying) && tl.Position <= tl.Duration)
         {
@@ -1097,6 +1178,7 @@ public partial class MainWindow : Window
             _uiaState = (_uiaState.Liked, next, _uiaState.Repeat);
             ApplyShuffleVisual(next);
         }
+        _shuffleToggledAt = DateTime.UtcNow;
 
         bool ok = await Task.Run(() => _uia.CycleShuffle());
         if (!ok)
@@ -1196,12 +1278,24 @@ public partial class MainWindow : Window
 
         CaptureForeground();
         _volLoading = true;
-        double? current = await Task.Run(() => _uia.GetVolume()) ?? SpotifyVolume.GetVolume();
-        _volLoading = false;
-        if (_closed || Visibility != Visibility.Visible)
-            return; // o widget escondeu-se durante a leitura: não abrir um
-                    // popup órfão a flutuar sobre a barra
-        VolumeSlider.Value = (current ?? 1.0) * 100;
+        try
+        {
+            // O recurso CoreAudio também fora da thread de UI — é uma RPC ao
+            // serviço de áudio e chegava a bloquear a interface
+            double? current = await Task.Run(() => _uia.GetVolume() ?? SpotifyVolume.GetVolume());
+            if (_closed || Visibility != Visibility.Visible)
+                return; // o widget escondeu-se durante a leitura: não abrir
+                        // um popup órfão a flutuar sobre a barra
+            // Atribuir COM _volLoading ainda ativo: senão o ValueChanged ecoava
+            // a leitura de volta ao Spotify em cada abertura — e uma leitura
+            // falhada (null → 100%) rebentava o volume só por abrir o popup
+            if (current is double v)
+                VolumeSlider.Value = v * 100;
+        }
+        finally
+        {
+            _volLoading = false;
+        }
         VolumePopup.IsOpen = true;
     }
 
@@ -1260,6 +1354,10 @@ public partial class MainWindow : Window
         // Acumular o delta em vez de ±5 por EVENTO: touchpads de precisão
         // mandam dezenas de eventos pequenos por gesto (o volume ia de 50 a 0
         // num toque) e rodas rápidas juntam vários notches num evento só
+        // Inverter o sentido descarta o resto acumulado — senão o primeiro
+        // notch da direção contrária era "engolido" a cancelar o resíduo
+        if (_wheelAccum != 0 && Math.Sign(_wheelAccum) != Math.Sign(e.Delta))
+            _wheelAccum = 0;
         _wheelAccum += e.Delta;
         int steps = _wheelAccum / 120;
         if (steps == 0) return;
@@ -1389,7 +1487,9 @@ public partial class MainWindow : Window
         double fraction = Math.Clamp(e.GetPosition(ProgressTrack).X / ProgressTrack.ActualWidth, 0, 1);
         var target = TimeSpan.FromTicks((long)(_duration.Ticks * fraction));
 
-        // Atualização otimista para a barra responder já
+        // Atualização otimista para a barra responder já; a janela de graça
+        // impede snapshots pré-salto de a fazer recuar nos segundos seguintes
+        _seekAt = DateTime.UtcNow;
         _basePosition = target;
         _basePositionAt = DateTime.UtcNow;
         UpdateProgressUi();
@@ -1469,6 +1569,10 @@ public partial class MainWindow : Window
                     monitors.Sort();
                 }
                 _settings.Save();
+                // Se esta própria janela vai ser removida, fechar o menu antes —
+                // um menu StaysOpen órfão numa janela destruída fica pendurado
+                if (!monitors.Contains(TrayIndex) && Root.ContextMenu is { IsOpen: true } cm)
+                    cm.IsOpen = false;
                 SyncToMonitors();
             };
             MonitorMenu.Items.Add(item);
@@ -1584,10 +1688,9 @@ public partial class MainWindow : Window
     {
         var item = (MenuItem)sender;
         _settings.Scale = double.Parse((string)item.Tag, CultureInfo.InvariantCulture);
+        // O Save propaga a TODAS as janelas via Changed (ApplySettingsUi +
+        // reposicionamento adiado para depois do layout) — nada a fazer aqui
         _settings.Save();
-        ApplyScale();
-        UpdateSizeChecks();
-        UpdatePosition();
     }
 
     private void ApplyScale() => Root.LayoutTransform = new ScaleTransform(_settings.Scale, _settings.Scale);
@@ -1605,9 +1708,7 @@ public partial class MainWindow : Window
     {
         var item = (MenuItem)sender;
         _settings.Opacity = double.Parse((string)item.Tag, CultureInfo.InvariantCulture);
-        _settings.Save();
-        ApplyOpacity();
-        UpdateOpacityChecks();
+        _settings.Save(); // propaga a todas as janelas via Changed
     }
 
     private void ApplyOpacity() => Root.Opacity = _settings.Opacity;
@@ -1772,6 +1873,7 @@ public partial class MainWindow : Window
         CancelRide(); // o tick do ride não pode continuar num hwnd morto
         if (_mediaChanged != null) _media.Changed -= _mediaChanged;
         if (_mediaTimeline != null) _media.TimelineChanged -= _mediaTimeline;
+        _media.Shutdown(); // solta as subscrições WinRT que prendiam a janela
         WidgetSettings.Changed -= OnSettingsChanged;
         Instances.Remove(this);
         if (!App.IntentionalExit && !ClosedByApp && !_recreatePending)

@@ -59,7 +59,12 @@ public sealed class SpotifyUiaService
     /// Fresh=false indica leitura possivelmente obsoleta (o chamador re-tenta).</summary>
     public (bool? Liked, ShuffleMode Shuffle, RepeatMode Repeat, bool Fresh) GetState(string? expectedTitle = null)
     {
-        lock (_lock)
+        // TryEnter com timeout em vez de lock: uma chamada UIA pendurada num
+        // Spotify a morrer segurava o lock para SEMPRE (o WaitAsync do chamador
+        // abandona a espera mas não solta o lock) e todos os botões morriam
+        if (!Monitor.TryEnter(_lock, TimeSpan.FromSeconds(3)))
+            return (null, ShuffleMode.Unknown, RepeatMode.Unknown, false);
+        try
         {
             try
             {
@@ -112,6 +117,10 @@ public sealed class SpotifyUiaService
                 return (null, ShuffleMode.Unknown, RepeatMode.Unknown, false);
             }
         }
+        finally
+        {
+            Monitor.Exit(_lock);
+        }
     }
 
     // ---------- Ações ----------
@@ -153,7 +162,9 @@ public sealed class SpotifyUiaService
     /// favoritos, confirmando o resultado no fim.</summary>
     public bool AddToFavoritesByClick()
     {
-        lock (_lock)
+        if (!Monitor.TryEnter(_lock, TimeSpan.FromSeconds(3)))
+            return false;
+        try
         {
             try
             {
@@ -207,6 +218,10 @@ public sealed class SpotifyUiaService
                 return false;
             }
         }
+        finally
+        {
+            Monitor.Exit(_lock);
+        }
     }
 
     /// <summary>Um clique no botão do Spotify: desligado → aleatório → inteligente → desligado.</summary>
@@ -232,7 +247,9 @@ public sealed class SpotifyUiaService
     /// em primeiro plano (os cliques do Chromium podem roubá-la).</summary>
     private bool DoWithRetry(Func<bool?> action)
     {
-        lock (_lock)
+        if (!Monitor.TryEnter(_lock, TimeSpan.FromSeconds(3)))
+            return false;
+        try
         {
             IntPtr fg = Interop.GetForegroundWindow();
             try
@@ -255,6 +272,10 @@ public sealed class SpotifyUiaService
                 RestoreForeground(fg);
             }
         }
+        finally
+        {
+            Monitor.Exit(_lock);
+        }
     }
 
     // ---------- Volume ----------
@@ -262,30 +283,44 @@ public sealed class SpotifyUiaService
     /// <summary>Volume atual do slider do próprio Spotify, 0..1.</summary>
     public double? GetVolume()
     {
+        // Snapshot local do trio (padrão+min+max): um rebuild concorrente podia
+        // emparelhar o padrão novo com limites antigos e dar contas erradas
         var pattern = _volumePattern;
-        if (pattern != null)
+        double min = _volMin, max = _volMax;
+        if (pattern != null && max > min)
         {
             try
             {
-                return _volMax <= _volMin ? null : (pattern.Current.Value - _volMin) / (_volMax - _volMin);
+                return (pattern.Current.Value - min) / (max - min);
             }
             catch { _volumePattern = null; }
         }
 
-        lock (_lock)
+        if (!Monitor.TryEnter(_lock, TimeSpan.FromSeconds(3)))
+            return null;
+        try
         {
-            try
+            EnsureGroups();
+            if (_volumePattern == null)
             {
-                EnsureGroups();
-                pattern = _volumePattern;
-                if (pattern == null || _volMax <= _volMin) return null;
-                return (pattern.Current.Value - _volMin) / (_volMax - _volMin);
-            }
-            catch
-            {
+                // O Spotify pode recriar SÓ o slider (mudança de dispositivo de
+                // saída) com o resto dos controlos vivo — sem isto, o rebuild
+                // preguiçoso nunca corria e o volume ficava morto para sempre
                 Invalidate();
-                return null;
+                EnsureGroups();
             }
+            pattern = _volumePattern;
+            if (pattern == null || _volMax <= _volMin) return null;
+            return (pattern.Current.Value - _volMin) / (_volMax - _volMin);
+        }
+        catch
+        {
+            Invalidate();
+            return null;
+        }
+        finally
+        {
+            Monitor.Exit(_lock);
         }
     }
 
@@ -294,12 +329,13 @@ public sealed class SpotifyUiaService
     public bool SetVolume(double fraction)
     {
         var pattern = _volumePattern;
-        if (pattern != null)
+        double min = _volMin, max = _volMax;
+        if (pattern != null && max > min)
         {
             IntPtr fg = Interop.GetForegroundWindow();
             try
             {
-                pattern.SetValue(_volMin + Math.Clamp(fraction, 0, 1) * (_volMax - _volMin));
+                pattern.SetValue(min + Math.Clamp(fraction, 0, 1) * (max - min));
                 if (fg != IntPtr.Zero && Interop.GetForegroundWindow() != fg)
                     Interop.SetForegroundWindow(fg);
                 return true;
@@ -310,12 +346,19 @@ public sealed class SpotifyUiaService
             }
         }
 
-        lock (_lock)
+        if (!Monitor.TryEnter(_lock, TimeSpan.FromSeconds(3)))
+            return false;
+        try
         {
             IntPtr fg = Interop.GetForegroundWindow();
             try
             {
                 EnsureGroups();
+                if (_volumePattern == null)
+                {
+                    Invalidate(); // slider recriado sozinho — forçar rebuild completo
+                    EnsureGroups();
+                }
                 pattern = _volumePattern;
                 if (pattern == null || _volMax <= _volMin) return false;
                 pattern.SetValue(_volMin + Math.Clamp(fraction, 0, 1) * (_volMax - _volMin));
@@ -331,6 +374,10 @@ public sealed class SpotifyUiaService
                 if (fg != IntPtr.Zero && Interop.GetForegroundWindow() != fg)
                     Interop.SetForegroundWindow(fg);
             }
+        }
+        finally
+        {
+            Monitor.Exit(_lock);
         }
     }
 

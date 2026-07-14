@@ -44,6 +44,8 @@ public class WidgetSettings
     public bool ShowRepeat { get; set; } = true;
     public bool ShowVolume { get; set; } = true;
 
+    private static readonly object SaveLock = new();
+
     private static string Dir =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "SpotifyTaskbarWidget");
 
@@ -90,7 +92,15 @@ public class WidgetSettings
         try
         {
             Directory.CreateDirectory(Dir);
-            File.WriteAllText(FilePath, JsonSerializer.Serialize(this));
+            // Escrita atómica: gravar ao lado e trocar por rename — um crash ou
+            // corte de energia a meio deixava um JSON truncado e o Load fazia
+            // reset silencioso a TODAS as definições do utilizador
+            string tmp = FilePath + ".tmp";
+            lock (SaveLock)
+            {
+                File.WriteAllText(tmp, JsonSerializer.Serialize(this));
+                File.Move(tmp, FilePath, overwrite: true);
+            }
         }
         catch { }
         Changed?.Invoke();
