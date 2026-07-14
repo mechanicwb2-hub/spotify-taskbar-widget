@@ -46,6 +46,10 @@ public partial class MainWindow : Window
     /// <summary>Fecho programático (sincronização de monitores) — não recriar.</summary>
     internal bool ClosedByApp;
 
+    private bool _closed;
+    private Action? _mediaChanged;
+    private Action? _mediaTimeline;
+
     private static readonly List<MainWindow> Instances = new();
     private static bool _updateCheckStarted;
     private static bool _recreatePending;
@@ -234,13 +238,17 @@ public partial class MainWindow : Window
         };
 
         await _media.InitializeAsync();
-        _media.Changed += () =>
+        if (_closed)
+            return; // fechada durante o await (sync de monitores / restart do Explorer)
+        _mediaChanged = () =>
         {
             _artDirty = true;
             _uiaDirty = true;
             Dispatcher.InvokeAsync(() => _ = RefreshTrackAsync());
         };
-        _media.TimelineChanged += () => Dispatcher.InvokeAsync(RefreshTimeline);
+        _mediaTimeline = () => Dispatcher.InvokeAsync(RefreshTimeline);
+        _media.Changed += _mediaChanged;
+        _media.TimelineChanged += _mediaTimeline;
 
         _trackTimer.Tick += (_, _) => _ = RefreshTrackAsync();
         _trackTimer.Start();
@@ -279,15 +287,22 @@ public partial class MainWindow : Window
 
     // ---------- Posicionamento na barra de tarefas ----------
 
-    /// <summary>Barra de tarefas desta janela (principal ou secundária).
-    /// Zero quando a barra alvo não existe (monitor desligado) — a janela
-    /// esconde-se e volta quando ela reaparecer.</summary>
+    /// <summary>Barra de tarefas desta janela (principal ou secundária). Se a
+    /// barra alvo não existir (monitor desligado), UMA janela órfã — a de menor
+    /// índice — recua para a barra principal, desde que nenhuma outra lá viva;
+    /// as restantes escondem-se. Garante que a app nunca fica toda invisível
+    /// (sem widget não há menu de contexto para recuperar).</summary>
     private IntPtr GetTargetTray()
     {
         if (TrayIndex > 0)
         {
             var secondaries = Interop.GetSecondaryTrays();
-            return TrayIndex <= secondaries.Count ? secondaries[TrayIndex - 1] : IntPtr.Zero;
+            if (TrayIndex <= secondaries.Count)
+                return secondaries[TrayIndex - 1];
+            bool primaryCovered = Instances.Any(w => w != this &&
+                (w.TrayIndex == 0 || (w.TrayIndex > secondaries.Count && w.TrayIndex < TrayIndex)));
+            if (primaryCovered)
+                return IntPtr.Zero;
         }
         return Interop.FindWindow("Shell_TrayWnd", null);
     }
@@ -471,9 +486,11 @@ public partial class MainWindow : Window
         bool rightAnchored = false;
         int rightAnchorLeftLimitPx = r.Left + 12;
         int leftPx, rightLimitPx;
-        if (!_settings.AutoPosition)
+        if (_settings.ManualX.TryGetValue(TrayIndex, out double manualX))
         {
-            leftPx = (int)Math.Max(r.Left + 4, Math.Min(_settings.X, r.Right - winWidth - 4));
+            // Posição manual DESTA barra (por monitor — arrastar um widget não
+            // pode arrastar os dos outros ecrãs)
+            leftPx = (int)Math.Max(r.Left + 4, Math.Min(manualX, r.Right - winWidth - 4));
             rightLimitPx = r.Right - 4;
         }
         else if (!IsTaskbarLeftAligned())
@@ -1361,9 +1378,12 @@ public partial class MainWindow : Window
             {
                 if (monitors.Contains(index))
                 {
-                    if (monitors.Count == 1)
+                    // Tem de sobrar pelo menos um monitor QUE EXISTA — entradas
+                    // de monitores desligados não contam, senão a seleção podia
+                    // ficar só com barras inexistentes e a app toda invisível
+                    if (!monitors.Any(m => m != index && m <= count))
                     {
-                        ((MenuItem)s).IsChecked = true; // pelo menos um monitor
+                        ((MenuItem)s).IsChecked = true;
                         return;
                     }
                     monitors.Remove(index);
@@ -1450,10 +1470,10 @@ public partial class MainWindow : Window
             Root.ReleaseMouseCapture();
             if (_dragMoved)
             {
-                // Fica bloqueado nesta posição (modo manual); guardar em px físicos
+                // Fica bloqueado nesta posição (modo manual) SÓ nesta barra;
+                // px físicos, indexados pelo monitor desta janela
                 if (Interop.GetWindowRect(_hwnd, out var w))
-                    _settings.X = w.Left;
-                _settings.AutoPosition = false;
+                    _settings.ManualX[TrayIndex] = w.Left;
                 _settings.Save();
             }
         }
@@ -1474,11 +1494,11 @@ public partial class MainWindow : Window
 
     private void ResetPos_Click(object sender, RoutedEventArgs e)
     {
+        // Repõe as POSIÇÕES automáticas em todas as barras; a seleção de
+        // monitores fica como está (limpá-la destruía a escolha do utilizador)
         _settings.AutoPosition = true;
-        _settings.Monitors.Clear();
-        _settings.Monitors.Add(0);
+        _settings.ManualX.Clear();
         _settings.Save();
-        SyncToMonitors();
         MoveMenu.IsChecked = false;
         _moveMode = false;
         Root.Cursor = Cursors.Hand;
@@ -1650,8 +1670,12 @@ public partial class MainWindow : Window
     protected override void OnClosed(EventArgs e)
     {
         base.OnClosed(e);
+        _closed = true; // trava a continuação do OnLoaded se ainda estiver no await
         _positionTimer.Stop();
         _trackTimer.Stop();
+        CancelRide(); // o tick do ride não pode continuar num hwnd morto
+        if (_mediaChanged != null) _media.Changed -= _mediaChanged;
+        if (_mediaTimeline != null) _media.TimelineChanged -= _mediaTimeline;
         WidgetSettings.Changed -= OnSettingsChanged;
         Instances.Remove(this);
         if (!App.IntentionalExit && !ClosedByApp && !_recreatePending)

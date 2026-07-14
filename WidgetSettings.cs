@@ -5,11 +5,16 @@ namespace SpotifyTaskbarWidget;
 
 public class WidgetSettings
 {
-    /// <summary>Alinhar automaticamente a seguir ao botão de widgets/tempo.</summary>
+    /// <summary>Compatibilidade com versões antigas — hoje vale <see cref="ManualX"/>.</summary>
     public bool AutoPosition { get; set; } = true;
 
-    /// <summary>Posição horizontal manual (px físicos de ecrã), usada quando AutoPosition = false.</summary>
+    /// <summary>Compatibilidade com versões antigas — hoje vale <see cref="ManualX"/>.</summary>
     public double X { get; set; } = 150;
+
+    /// <summary>Posições manuais por barra (px físicos), indexadas por monitor
+    /// (0 = principal). Barra sem entrada = posição automática. Por-monitor de
+    /// propósito: arrastar um widget não pode mexer nos dos outros ecrãs.</summary>
+    public Dictionary<int, double> ManualX { get; set; } = new();
 
     /// <summary>Escala do widget (0.8 = pequeno, 1.0 = normal, 1.1 = grande).</summary>
     public double Scale { get; set; } = 1.0;
@@ -53,20 +58,31 @@ public class WidgetSettings
         try
         {
             s = JsonSerializer.Deserialize<WidgetSettings>(File.ReadAllText(FilePath)) ?? new WidgetSettings();
+            // Um ficheiro editado à mão / escrito a meio pode trazer campos a
+            // null — normalizar DENTRO do try: um settings estragado não pode
+            // impedir o arranque (ficava um processo invisível para sempre)
+            if (s.Monitors is null) s.Monitors = new List<int>();
+            if (s.ManualX is null) s.ManualX = new Dictionary<int, double>();
         }
         catch
         {
             s = new WidgetSettings();
         }
         if (s.Monitors.Count == 0)
-            s.Monitors.Add(s.MonitorIndex); // migração do formato antigo
-        s.Monitors = s.Monitors.Distinct().OrderBy(i => i).ToList();
+            s.Monitors.Add(Math.Max(0, s.MonitorIndex)); // migração do formato antigo
+        s.Monitors = s.Monitors.Where(i => i >= 0).Distinct().OrderBy(i => i).ToList();
+        if (!s.AutoPosition && s.ManualX.Count == 0)
+            s.ManualX[s.MonitorIndex] = s.X; // migração da posição manual única
         return s;
     }
 
     public void Save()
     {
-        MonitorIndex = Monitors.Count > 0 ? Monitors[0] : 0; // downgrade-safe
+        // Espelhos do formato antigo, para um eventual downgrade ler algo válido
+        MonitorIndex = Monitors.Count > 0 ? Monitors[0] : 0;
+        AutoPosition = !ManualX.ContainsKey(MonitorIndex);
+        if (ManualX.TryGetValue(MonitorIndex, out double x))
+            X = x;
         try
         {
             Directory.CreateDirectory(Dir);

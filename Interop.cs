@@ -95,7 +95,10 @@ internal static class Interop
     [DllImport("user32.dll")]
     private static extern int SetWindowRgn(IntPtr hWnd, IntPtr hRgn, bool bRedraw);
 
-    private static bool _windowClipped;
+    // Estado de recorte POR JANELA: há um widget por monitor, e uma flag única
+    // fazia uma janela "consumir" a remoção do recorte da outra — o widget
+    // ficava truncado/invisível para sempre no outro monitor
+    private static readonly HashSet<IntPtr> _clippedWindows = new();
 
     /// <summary>Recorta a janela ao que cabe acima do fundo do ecrã enquanto a
     /// barra desliza (ocultação automática). Sem recorte, a parte que já "saiu"
@@ -105,15 +108,12 @@ internal static class Interop
     {
         if (visibleHeightPx >= heightPx)
         {
-            if (_windowClipped)
-            {
+            if (_clippedWindows.Remove(hwnd))
                 SetWindowRgn(hwnd, IntPtr.Zero, true);
-                _windowClipped = false;
-            }
             return;
         }
         SetWindowRgn(hwnd, CreateRectRgn(0, 0, widthPx, Math.Max(0, visibleHeightPx)), true);
-        _windowClipped = true;
+        _clippedWindows.Add(hwnd);
     }
 
     [DllImport("user32.dll")]
