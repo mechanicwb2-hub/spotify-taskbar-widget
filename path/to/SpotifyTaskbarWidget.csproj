@@ -1,0 +1,30 @@
+# complete code
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>SpotifyTaskbarWidget</RootNamespace>
+    <AssemblyName>SpotifyTaskbarWidget</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>app.ico</ApplicationIcon>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <Version>1.2.7</Version>
+    <Product>Taskbar Widget for Spotify</Product>
+    <AssemblyTitle>Taskbar Widget for Spotify</AssemblyTitle>
+    <Company>MechanicWB</Company>
+    <!-- Um único .exe no publish, para as atualizações substituírem só um ficheiro -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>false</SelfContained>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="System.Windows" />
+    <Reference Include="System.Windows.Interop" />
+  </ItemGroup>
+
+</Project>
