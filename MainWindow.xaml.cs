@@ -587,11 +587,19 @@ public partial class MainWindow : Window
         else if (!IsTaskbarLeftAligned())
         {
             // Numa barra centrada o botão Iniciar existe sempre — âncora nula
-            // significa que a leitura ainda não chegou (arranque / primeiro
-            // reveal do auto-hide): esperar em vez de posicionar às cegas
-            // (o widget aparecia encostado à esquerda e "saltava" depois)
-            if (!startLeftPx.HasValue)
+            // significa que a leitura ainda não chegou ou falhou.
+            if (!startLeftPx.HasValue && Visibility == Visibility.Visible)
             {
+                // Já estamos bem posicionados: FICAR QUIETO até as âncoras
+                // voltarem — esconder e reaparecer na borda esquerda (por cima
+                // do botão do tempo) era exatamente o salto reportado
+                leftPx = w.Left;
+                rightLimitPx = r.Right - 4;
+            }
+            else if (!startLeftPx.HasValue)
+            {
+                // Ainda sem posição (arranque / primeiro reveal): esperar em
+                // vez de posicionar às cegas; após o limite, fallback à esquerda
                 if (_anchorsMissingSince == DateTime.MinValue)
                     _anchorsMissingSince = DateTime.UtcNow;
                 if (DateTime.UtcNow - _anchorsMissingSince < TimeSpan.FromSeconds(4))
@@ -599,17 +607,18 @@ public partial class MainWindow : Window
                     HideWidget();
                     return;
                 }
+                leftPx = widgetsRightPx.HasValue ? (int)widgetsRightPx.Value + 8 : r.Left + 12;
+                rightLimitPx = r.Right - 4;
             }
             else
             {
                 _anchorsMissingSince = DateTime.MinValue;
+                // Ícones centrados (em qualquer barra/monitor): o espaço livre
+                // está à esquerda — alinhar a seguir ao botão de widgets/tempo;
+                // sem ele, à borda esquerda. Nunca invadir o botão Iniciar.
+                leftPx = widgetsRightPx.HasValue ? (int)widgetsRightPx.Value + 8 : r.Left + 12;
+                rightLimitPx = (int)startLeftPx.Value - 8;
             }
-
-            // Ícones centrados (em qualquer barra/monitor): o espaço livre está
-            // à esquerda — alinhar a seguir ao botão de widgets/tempo; sem ele,
-            // à borda esquerda. Nunca invadir os ícones (botão Iniciar).
-            leftPx = widgetsRightPx.HasValue ? (int)widgetsRightPx.Value + 8 : r.Left + 12;
-            rightLimitPx = startLeftPx.HasValue ? (int)startLeftPx.Value - 8 : r.Right - 4;
         }
         else
         {
@@ -862,10 +871,14 @@ public partial class MainWindow : Window
                     // escondido (shells modificadas) congelava as âncoras todas
                     if (!startLeft.HasValue && _startLeftPx.HasValue && ++_startMissingReads < 3)
                         return;
+                    bool startVanished = !startLeft.HasValue && _startLeftPx.HasValue;
                     _startMissingReads = 0;
-                    _widgetsRightPx = widgetsRight; // null aqui = desativado mesmo
+                    // Se o Iniciar sumiu (estado anómalo da shell), as outras
+                    // âncoras nulas provavelmente só falharam JUNTAS — manter as
+                    // antigas; com leitura completa, null = desativado mesmo
+                    _widgetsRightPx = startVanished ? (widgetsRight ?? _widgetsRightPx) : widgetsRight;
+                    _taskEndPx = startVanished ? (taskButtonsRight ?? _taskEndPx) : taskButtonsRight;
                     _startLeftPx = startLeft;
-                    _taskEndPx = taskButtonsRight;
                 }
             }
             finally
