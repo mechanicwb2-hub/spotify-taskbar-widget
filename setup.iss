@@ -2,7 +2,7 @@
 ; Compilar: ISCC.exe setup.iss  (depois de dotnet publish)
 
 #define MyAppName "Taskbar Widget for Spotify"
-#define MyAppVersion "1.2.8"
+#define MyAppVersion "1.2.9"
 #define MyAppPublisher "MechanicWB"
 #define MyAppURL "https://github.com/mechanicwb2-hub/spotify-taskbar-widget"
 #define MyAppExeName "SpotifyTaskbarWidget.exe"
