@@ -2,7 +2,7 @@
 # manifests/m/MechanicWB/TaskbarWidgetForSpotify/1.1.0/
 # NOTA: requer a release v1.2.4 publicada no GitHub e a conta desbloqueada.
 PackageIdentifier: MechanicWB.TaskbarWidgetForSpotify
-PackageVersion: 1.2.8
+PackageVersion: 1.2.9
 DefaultLocale: en-US
 ManifestType: version
 ManifestVersion: 1.6.0

@@ -234,11 +234,22 @@
                     <MenuItem x:Name="SizeNormal" Header="Normal" IsCheckable="True" Click="Size_Click" Tag="1.0"/>
                     <MenuItem x:Name="SizeLarge" Header="Grande" IsCheckable="True" Click="Size_Click" Tag="1.1"/>
                 </MenuItem>
-                <MenuItem x:Name="OpacityMenuItem" Header="Brilho">
-                    <MenuItem x:Name="Opacity100" Header="100%" IsCheckable="True" Click="Opacity_Click" Tag="1.0"/>
-                    <MenuItem x:Name="Opacity85" Header="85%" IsCheckable="True" Click="Opacity_Click" Tag="0.85"/>
-                    <MenuItem x:Name="Opacity70" Header="70%" IsCheckable="True" Click="Opacity_Click" Tag="0.7"/>
-                    <MenuItem x:Name="Opacity55" Header="55%" IsCheckable="True" Click="Opacity_Click" Tag="0.55"/>
+                <MenuItem x:Name="OpacityMenuItem" Header="Brilho" StaysOpenOnClick="True">
+                    <!-- Slider contínuo (pedido da comunidade OLED); mínimo de 20%
+                         para o widget nunca ficar invisível e inalcançável -->
+                    <MenuItem x:Name="OpacitySliderItem" StaysOpenOnClick="True">
+                        <MenuItem.Header>
+                            <StackPanel Orientation="Horizontal">
+                                <Slider x:Name="OpacitySlider" Style="{StaticResource SpotifySlider}" Width="110"
+                                        Minimum="20" Maximum="100" SmallChange="5" LargeChange="10"
+                                        IsMoveToPointEnabled="True" VerticalAlignment="Center"
+                                        ValueChanged="OpacitySlider_ValueChanged"
+                                        MouseWheel="Opacity_MouseWheel"/>
+                                <TextBlock x:Name="OpacityValueText" Text="100%" Foreground="White"
+                                           Margin="8,0,0,0" Width="36" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </MenuItem.Header>
+                    </MenuItem>
                 </MenuItem>
                 <MenuItem x:Name="ButtonsMenuItem" Header="Botões">
                     <MenuItem x:Name="BtnLikeMenu" Header="Adicionar aos favoritos (+)" IsCheckable="True" Click="Buttons_Click"/>

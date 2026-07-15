@@ -82,6 +82,9 @@ public class WidgetSettings
         s.Monitors = s.Monitors.Where(i => i >= 0).Distinct().OrderBy(i => i).ToList();
         if (!s.AutoPosition && s.ManualX.Count == 0)
             s.ManualX[s.MonitorIndex] = s.X; // migração da posição manual única
+        // Nunca abaixo de 20%: um settings estragado com Opacity=0 tornava o
+        // widget invisível e sem forma de clicar para o recuperar
+        s.Opacity = Math.Clamp(s.Opacity, 0.2, 1.0);
         return s;
     }
 

@@ -203,8 +203,11 @@ public partial class MainWindow : Window
         ArtistText.Text = L.NothingPlaying;
     }
 
+    private bool _uiReady;
+
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
+        _uiReady = true; // InitializeComponent terminou: elementos nomeados existem
         ApplyLanguage();
         if (PackagedApp.IsPackaged)
         {
@@ -1730,21 +1733,63 @@ public partial class MainWindow : Window
 
     /// <summary>Brilho/opacidade do widget — pedido de utilizadores OLED que
     /// escurecem a barra: um widget a brilho total destoa e marca o painel.</summary>
-    private void Opacity_Click(object sender, RoutedEventArgs e)
+    private bool _opacityLoading;
+
+    /// <summary>Slider de brilho 20–100% (pedido da comunidade OLED). Pré-visualiza
+    /// ao vivo ao arrastar; grava no fim, uma vez, para não inundar o disco nem
+    /// o evento Changed com um Save por cada passo do arrasto.</summary>
+    private void OpacitySlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
-        var item = (MenuItem)sender;
-        _settings.Opacity = double.Parse((string)item.Tag, CultureInfo.InvariantCulture);
+        // Durante o carregamento do XAML, definir Minimum=20 coage o Value de 0
+        // para 20 e dispara este evento ANTES de Root/OpacityValueText existirem
+        // — sem este guard era NRE e a janela nunca se construía (widget sumia)
+        if (_opacityLoading || !_uiReady) return;
+        _settings.Opacity = Math.Clamp(e.NewValue / 100.0, 0.2, 1.0);
+        ApplyOpacity();
+        OpacityValueText.Text = $"{Math.Round(e.NewValue)}%";
+        // Adiar o Save até o slider assentar (sem eventos por ~400ms)
+        _opacitySaveTimer ??= new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
+        _opacitySaveTimer.Stop();
+        _opacitySaveTimer.Tick -= OpacitySaveTick;
+        _opacitySaveTimer.Tick += OpacitySaveTick;
+        _opacitySaveTimer.Start();
+    }
+
+    private DispatcherTimer? _opacitySaveTimer;
+
+    private void OpacitySaveTick(object? sender, EventArgs e)
+    {
+        _opacitySaveTimer?.Stop();
         _settings.Save(); // propaga a todas as janelas via Changed
+    }
+
+    private int _opacityWheelAccum;
+
+    /// <summary>Roda do rato sobre o slider de brilho: ±5% por notch, igual ao
+    /// volume. Acumula o delta (touchpads de precisão mandam muitos eventos
+    /// pequenos) e descarta o resto ao inverter o sentido.</summary>
+    private void Opacity_MouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        e.Handled = true;
+        if (_opacityWheelAccum != 0 && Math.Sign(_opacityWheelAccum) != Math.Sign(e.Delta))
+            _opacityWheelAccum = 0;
+        _opacityWheelAccum += e.Delta;
+        int steps = _opacityWheelAccum / 120;
+        if (steps == 0) return;
+        _opacityWheelAccum -= steps * 120;
+        // Mexer no Value dispara o ValueChanged, que aplica e agenda o Save
+        OpacitySlider.Value = Math.Clamp(OpacitySlider.Value + 5 * steps, 20, 100);
     }
 
     private void ApplyOpacity() => Root.Opacity = _settings.Opacity;
 
     private void UpdateOpacityChecks()
     {
-        Opacity100.IsChecked = _settings.Opacity > 0.95;
-        Opacity85.IsChecked = Math.Abs(_settings.Opacity - 0.85) < 0.05;
-        Opacity70.IsChecked = Math.Abs(_settings.Opacity - 0.7) < 0.05;
-        Opacity55.IsChecked = _settings.Opacity < 0.6;
+        // Refletir o valor guardado no slider sem redisparar o Save
+        _opacityLoading = true;
+        OpacitySlider.Value = Math.Round(_settings.Opacity * 100);
+        OpacityValueText.Text = $"{Math.Round(_settings.Opacity * 100)}%";
+        _opacityLoading = false;
     }
 
     private void Launcher_Click(object sender, RoutedEventArgs e)
