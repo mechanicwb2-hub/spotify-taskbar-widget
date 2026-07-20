@@ -30,6 +30,32 @@ public sealed class SpotifyUiaService
         { "desativar", "disable", "desactivar", "désactiver", "deaktivieren",
           "disattiva", "uitschakelen", "wyłącz", "stäng av", "slå fra", "kapat" };
 
+    // Favoritos: quando a faixa está guardada, o botão passa a referir a
+    // "playlist" (o menu "adicionar a playlist"). Muitos idiomas mantêm o
+    // anglicismo (PT/ES/IT/DE/FR) — e "playlista" (PL) contém "playlist" —,
+    // mas os nórdicos e o neerlandês traduzem. Casado com Contains.
+    private static readonly string[] PlaylistTerms =
+        { "playlist", "spellista", "spilleliste", "soittolista", "afspeellijst" };
+
+    private static bool IsLikedName(string name) =>
+        PlaylistTerms.Any(t => name.Contains(t, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>Regista UMA vez cada nome distinto dos botões de favoritos e
+    /// aleatório, mas só em Windows não-inglês — a população afetada pelo #16.
+    /// Assim recolhemos os nomes reais que o Spotify expõe nesses idiomas e
+    /// expandimos as listas de termos com dados, em vez de adivinhar. Sem ruído
+    /// para os utilizadores ingleses (a maioria, e onde a deteção já acerta).</summary>
+    private static void LogI18nNames(string likeName, string shuffleName)
+    {
+        if (System.Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName
+            .Equals("en", StringComparison.OrdinalIgnoreCase))
+            return;
+        if (likeName.Length > 0)
+            Diag.Once("i18n-like:" + likeName, "[i18n] like button name: " + likeName);
+        if (shuffleName.Length > 0)
+            Diag.Once("i18n-shuffle:" + shuffleName, "[i18n] shuffle button name: " + shuffleName);
+    }
+
     private static readonly Condition ButtonCond =
         new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button);
     private static readonly Condition CheckBoxCond =
@@ -79,21 +105,26 @@ public sealed class SpotifyUiaService
                     fresh = groupName.Contains(expectedTitle, StringComparison.OrdinalIgnoreCase);
                 }
                 var like = FindLikeButton(trackInfo);
+                string likeName = like?.Current.Name ?? "";
                 if (like != null)
-                {
-                    string name = like.Current.Name ?? "";
-                    liked = name.Contains("playlist", StringComparison.OrdinalIgnoreCase);
-                }
+                    liked = IsLikedName(likeName);
 
                 var shuffleMode = ShuffleMode.Unknown;
                 var shuffle = FindShuffleButton();
+                string shuffleName = shuffle?.Current.Name ?? "";
                 if (shuffle != null)
                 {
-                    string name = (shuffle.Current.Name ?? "").ToLowerInvariant();
-                    bool smart = SmartTerms.Any(name.Contains);
-                    bool disable = DisableTerms.Any(name.StartsWith);
+                    string n = shuffleName.ToLowerInvariant();
+                    bool smart = SmartTerms.Any(n.Contains);
+                    // Contains (não StartsWith): idiomas com o verbo no fim
+                    // ("… deaktivieren", "… kapat") não começam pelo termo
+                    bool disable = DisableTerms.Any(n.Contains);
                     shuffleMode = smart ? (disable ? ShuffleMode.Smart : ShuffleMode.On) : ShuffleMode.Off;
                 }
+
+                // Recolher os nomes reais dos botões nos idiomas afetados (#16),
+                // para expandir as listas de termos com dados em vez de adivinhar
+                LogI18nNames(likeName, shuffleName);
 
                 var repeatMode = RepeatMode.Unknown;
                 var repeat = FindRepeatCheckbox();
@@ -135,7 +166,7 @@ public sealed class SpotifyUiaService
         if (like == null) return (bool?)null; // contentor obsoleto → repetir após rebuild
 
         string name = like.Current.Name ?? "";
-        if (name.Contains("playlist", StringComparison.OrdinalIgnoreCase))
+        if (IsLikedName(name))
             return true; // já está nos favoritos
 
         // O botão + atual do Spotify tem aria-haspopup, por isso o Chromium só
@@ -171,7 +202,7 @@ public sealed class SpotifyUiaService
                 EnsureGroups();
                 var like = FindLikeButton(FindTrackInfoGroup());
                 if (like == null) return false;
-                if ((like.Current.Name ?? "").Contains("playlist", StringComparison.OrdinalIgnoreCase))
+                if (IsLikedName(like.Current.Name ?? ""))
                     return true; // já está nos favoritos
 
                 var proc = Process.GetProcessesByName("Spotify")
@@ -201,7 +232,7 @@ public sealed class SpotifyUiaService
                     Thread.Sleep(350);
 
                     string after = FindLikeButton(FindTrackInfoGroup())?.Current.Name ?? "";
-                    return after.Contains("playlist", StringComparison.OrdinalIgnoreCase);
+                    return IsLikedName(after);
                 }
                 finally
                 {
