@@ -11,7 +11,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>app.ico</ApplicationIcon>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
-    <Version>1.2.9</Version>
+    <Version>1.3.0</Version>
     <Product>Taskbar Widget for Spotify</Product>
     <AssemblyTitle>Taskbar Widget for Spotify</AssemblyTitle>
     <Company>MechanicWB</Company>
@@ -20,5 +20,8 @@
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>false</SelfContained>
   </PropertyGroup>
+  <ItemGroup>
+    <Resource Include="Fonts\*.ttf" />
+  </ItemGroup>
 
 </Project>

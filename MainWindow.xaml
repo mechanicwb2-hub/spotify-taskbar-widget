@@ -258,17 +258,19 @@
                     <MenuItem x:Name="BtnNextMenu" Header="Seguinte" IsCheckable="True" Click="Buttons_Click"/>
                     <MenuItem x:Name="BtnRepeatMenu" Header="Repetição" IsCheckable="True" Click="Buttons_Click"/>
                     <MenuItem x:Name="BtnVolumeMenu" Header="Volume" IsCheckable="True" Click="Buttons_Click"/>
+                    <MenuItem x:Name="LyricsMenu" Header="Letras" IsCheckable="True" Click="Buttons_Click"/>
+                    <MenuItem x:Name="ProgressMenu" Header="Barra de progresso" IsCheckable="True" Click="Progress_MenuClick"/>
                 </MenuItem>
-                <MenuItem x:Name="ProgressMenu" Header="Barra de progresso" IsCheckable="True" Click="Progress_MenuClick"/>
-                <MenuItem x:Name="ScrollTitleOnceMenu" Header="Animar título longo apenas uma vez" IsCheckable="True" Click="ScrollTitleOnce_MenuClick" ToolTip="Faz scroll do título da música uma vez no início e depois mantém-no fixo"/>
+                <MenuItem x:Name="LyricsStyleMenu" Header="Estilo Letra">
+                    <MenuItem x:Name="LyricsStyleDefault" Header="1 Linha" IsCheckable="True" Click="LyricsStyle_Click"/>
+                    <MenuItem x:Name="LyricsStyleScroll" Header="2 Linhas" IsCheckable="True" Click="LyricsStyle_Click"/>
+                </MenuItem>
+                <Separator/>
+                <MenuItem x:Name="AutoStartMenu" Header="Iniciar com o Windows" IsCheckable="True" Click="AutoStart_Click"/>
                 <MenuItem x:Name="LauncherMenu" Header="Mostrar botão para abrir o Spotify" IsCheckable="True"
                           Click="Launcher_Click"
                           ToolTip="Com o Spotify fechado, mostra um botão para o abrir em vez de esconder o widget"/>
-                <Separator/>
-                <MenuItem x:Name="AutoStartMenu" Header="Iniciar com o Windows" IsCheckable="True" Click="AutoStart_Click"/>
-                <MenuItem x:Name="OpenSpotifyMenu" Header="Abrir Spotify" Click="OpenSpotify_Click"/>
-                <MenuItem x:Name="DonateMenu" Header="Apoiar o projeto ☕" Click="Donate_Click" Visibility="Collapsed"/>
-                <MenuItem x:Name="UpdateMenu" Header="Procurar atualizações" Click="Update_Click"/>
+                <MenuItem x:Name="OpenSpotifyMenu" Header="Abrir Spotify" Click="OpenSpotify_Click" Visibility="Collapsed"/>
                 <Separator/>
                 <MenuItem x:Name="ExitMenu" Header="Sair" Click="Exit_Click"/>
             </ContextMenu>
@@ -282,17 +284,26 @@
 
             <!-- Spotify fechado: botão opcional para o abrir -->
             <StackPanel x:Name="LauncherPanel" Grid.Row="0" Orientation="Horizontal" VerticalAlignment="Center"
-                        Visibility="Collapsed" ToolTip="Abrir o Spotify">
+                        Visibility="Collapsed" ToolTip="Abrir o Spotify"
+                        Cursor="Hand" MouseLeftButtonUp="Art_MouseLeftButtonUp">
                 <Path Width="20" Height="20" Stretch="Uniform" Fill="#1ED760" VerticalAlignment="Center"
                       Data="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0zm3.669 11.538a.498.498 0 0 1-.686.165c-1.879-1.147-4.243-1.407-7.028-.77a.499.499 0 0 1-.222-.973c3.048-.696 5.662-.397 7.77.892a.5.5 0 0 1 .166.686zm.979-2.178a.624.624 0 0 1-.858.205c-2.15-1.321-5.428-1.704-7.972-.932a.625.625 0 0 1-.362-1.194c2.905-.881 6.517-.454 8.986 1.063a.624.624 0 0 1 .206.858zm.084-2.268C10.154 5.56 5.9 5.419 3.438 6.166a.748.748 0 1 1-.434-1.432c2.825-.857 7.523-.692 10.492 1.07a.747.747 0 1 1-.764 1.288z"/>
                 <TextBlock x:Name="LauncherText" Text="Abrir Spotify" Foreground="#B3B3B3" FontSize="12" FontWeight="SemiBold"
                            Margin="8,0,0,0" VerticalAlignment="Center"/>
             </StackPanel>
 
-            <StackPanel x:Name="ContentPanel" Grid.Row="0" Orientation="Horizontal" VerticalAlignment="Center">
+            <StackPanel Grid.Row="0" Orientation="Horizontal" VerticalAlignment="Center" MinHeight="48">
+                <!-- Parte Esquerda: Controlos e Progresso -->
+                <Grid VerticalAlignment="Center">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <StackPanel x:Name="ContentPanel" Grid.Row="0" Orientation="Horizontal" VerticalAlignment="Center">
 
                 <!-- Capa do álbum -->
-                <Border Width="34" Height="34" CornerRadius="4" Background="#22FFFFFF" VerticalAlignment="Center">
+                <Border Width="34" Height="34" CornerRadius="4" Background="#22FFFFFF" VerticalAlignment="Center" Cursor="Hand" MouseLeftButtonUp="Art_MouseLeftButtonUp" ToolTip="Abrir Spotify">
                     <Grid>
                         <TextBlock x:Name="ArtPlaceholder" Text="&#xE93C;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
                                    FontSize="14" Foreground="#88FFFFFF"
@@ -306,12 +317,13 @@
                 </Border>
 
                 <!-- Título e artista (cores do Spotify: branco / #B3B3B3) -->
-                <StackPanel x:Name="TextStack" VerticalAlignment="Center" Margin="9,0,6,0" Width="150">
+                <StackPanel x:Name="TextStack" VerticalAlignment="Center" Margin="9,0,6,0" Width="150" Cursor="Hand" MouseLeftButtonUp="Art_MouseLeftButtonUp" ToolTip="Abrir Spotify">
                     <!-- Canvas: mede o filho com espaço infinito, por isso o título
                          renderiza SEMPRE completo (a Grid cortava-o à largura da
                          célula e o marquee deslizava um texto já truncado) -->
                     <Canvas x:Name="TitleClip" ClipToBounds="True" Height="16">
                         <TextBlock x:Name="TitleText" Text="Spotify" Foreground="White"
+                                   FontFamily="./Fonts/#Google Sans Flex"
                                    FontWeight="SemiBold" FontSize="12"
                                    Canvas.Left="0" Canvas.Top="0">
                             <TextBlock.RenderTransform>
@@ -319,7 +331,8 @@
                             </TextBlock.RenderTransform>
                         </TextBlock>
                     </Canvas>
-                    <TextBlock x:Name="ArtistText" Text="nada a tocar" Foreground="#B3B3B3"
+                    <TextBlock x:Name="ArtistText" Text="" Foreground="#B3B3B3"
+                               FontFamily="./Fonts/#Google Sans Flex"
                                FontSize="11" TextTrimming="CharacterEllipsis"/>
                 </StackPanel>
 
@@ -391,16 +404,37 @@
                     <Path x:Name="VolumeIcon" Width="14" Height="14" Stretch="Uniform" Fill="#B3B3B3"
                           Data="M9.741.85a.75.75 0 0 1 .375.65v13a.75.75 0 0 1-1.125.65l-6.925-4a3.642 3.642 0 0 1-1.33-4.967 3.639 3.639 0 0 1 1.33-1.332l6.925-4a.75.75 0 0 1 .75 0zm-6.924 5.3a2.139 2.139 0 0 0 0 3.7l5.8 3.35V2.8l-5.8 3.35zm8.683 4.29V5.56a2.75 2.75 0 0 1 0 4.88z M11.5 13.614a5.752 5.752 0 0 0 0-11.228v1.55a4.252 4.252 0 0 1 0 8.127v1.55z"/>
                 </Button>
-            </StackPanel>
 
-            <!-- Barra de progresso da música (clique para saltar) -->
-            <Border x:Name="ProgressTrack" Grid.Row="1" Height="3" CornerRadius="1.5"
-                    Background="#33FFFFFF" Margin="1,2,1,3" Cursor="Hand"
-                    MouseLeftButtonDown="Progress_MouseLeftButtonDown"
-                    MouseEnter="Progress_MouseEnter" MouseLeave="Progress_MouseLeave">
-                <Border x:Name="ProgressFill" CornerRadius="1.5" Background="White"
-                        HorizontalAlignment="Left" Width="0"/>
-            </Border>
+                <!-- Botão de Letras -->
+                <Button x:Name="LyricsToggleButton" Style="{StaticResource IconButton}"
+                        Margin="2,0,0,0" VerticalAlignment="Center" Click="LyricsToggle_Click"
+                        ToolTip="Mostrar/Ocultar Letras">
+                    <Path x:Name="LyricsToggleIcon" Width="14" Height="14" Stretch="Uniform" Fill="#B3B3B3"
+                          Data="M261.5,266.2V67.9c0-2.4.4-5.6,1.8-7.6s5-4.6,7.6-5.5l66.8-22.4c9.3-2,18.2,3.5,19.7,12.9,0,38.3,0,41.2,0,72.8s-4.6,11.3-10.5,13.5l-61.4,21.1v155.2c-7.7,56.7-113.3,57.5-126.5,6.4-10.7-41.4,39.7-62.1,73.4-57.7,10.5,1.4,19.5,5.2,29,9.7Z M38.3,132.2l159.8-.2c.9,0,1.8,0,2.6.3,12.5,3,12.5,20.3,0,23.4s-1.8.3-2.7.3H38.8c-1.6,0-3.1-.2-4.6-.7-9.3-3.3-10.7-15-3.5-20.6,2.2-1.7,4.9-2.5,7.6-2.5Z M37.8,68.4l160.1-.2c1.8,0,3.5.4,5.1,1.1,11,5.3,8.9,20.9-4.7,22.8s-1,0-1.5,0H39.4c-1.5,0-3.1-.2-4.6-.6-9.3-2.9-11.5-13.9-5.5-19.9s5.3-3.3,8.4-3.3Z M38.4,195.9h94.6c1.5,0,3.1,0,4.5.5,9.1,3,11.2,13.9,5,20s-5.3,3.3-8.4,3.3H37.7c-2.2,0-4.5-.5-6.3-1.7-7.6-4.8-6.9-16.8,1.5-20.9s3.6-1.1,5.5-1.1Z"/>
+                </Button>
+                </StackPanel>
+
+                    <!-- Barra de progresso da música (clique para saltar) - agora fixada à largura do ContentPanel -->
+                    <Border x:Name="ProgressTrack" Grid.Row="1" Height="3" CornerRadius="1.5"
+                            Background="#33FFFFFF" Margin="1,3,1,3" Cursor="Hand"
+                            MouseLeftButtonDown="Progress_MouseLeftButtonDown"
+                            MouseEnter="Progress_MouseEnter" MouseLeave="Progress_MouseLeave">
+                        <Border x:Name="ProgressFill" CornerRadius="1.5" Background="White"
+                                HorizontalAlignment="Left" Width="0"/>
+                    </Border>
+                </Grid>
+
+                <!-- Painel das Letras (agora ao lado do ContentPanel) -->
+                <Grid x:Name="LyricsPanel" VerticalAlignment="Center" Visibility="Collapsed" Margin="15,3,9,5" Width="400" MinHeight="40" ClipToBounds="True">
+                    <StackPanel x:Name="LyricsScrollPanel" VerticalAlignment="Top">
+                        <StackPanel.RenderTransform>
+                            <TranslateTransform x:Name="LyricsScrollTransform" Y="0"/>
+                        </StackPanel.RenderTransform>
+                        <TextBlock x:Name="LyricsText" Text="" FontFamily="./Fonts/#Google Sans Flex" Foreground="White" FontWeight="SemiBold" FontSize="15" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" TextAlignment="Center" HorizontalAlignment="Center"/>
+                        <TextBlock x:Name="LyricsTextNext" Text="" FontFamily="./Fonts/#Google Sans Flex" Foreground="#88FFFFFF" FontWeight="SemiBold" FontSize="15" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" TextAlignment="Center" HorizontalAlignment="Center" Visibility="Collapsed"/>
+                    </StackPanel>
+                </Grid>
+            </StackPanel>
 
             <!-- Slider de volume horizontal estilo Spotify -->
             <Popup x:Name="VolumePopup" PlacementTarget="{Binding ElementName=VolumeButton}"

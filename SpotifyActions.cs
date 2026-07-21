@@ -51,8 +51,16 @@ internal static class SpotifyActions
         var proc = Process.GetProcessesByName("Spotify").FirstOrDefault(p => p.MainWindowHandle != IntPtr.Zero);
         if (proc != null)
         {
-            Interop.ShowWindow(proc.MainWindowHandle, Interop.SW_RESTORE);
-            Interop.SetForegroundWindow(proc.MainWindowHandle);
+            if (Interop.GetForegroundWindow() == proc.MainWindowHandle)
+            {
+                Interop.ShowWindow(proc.MainWindowHandle, Interop.SW_MINIMIZE);
+            }
+            else
+            {
+                if (Interop.IsIconic(proc.MainWindowHandle))
+                    Interop.ShowWindow(proc.MainWindowHandle, Interop.SW_RESTORE);
+                Interop.SetForegroundWindow(proc.MainWindowHandle);
+            }
         }
         else
         {

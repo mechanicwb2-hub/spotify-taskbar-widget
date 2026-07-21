@@ -46,6 +46,9 @@ public class WidgetSettings
     public bool ShowShuffle { get; set; } = true;
     public bool ShowRepeat { get; set; } = true;
     public bool ShowVolume { get; set; } = true;
+    public bool ShowLyrics { get; set; } = false;
+    public int LyricsStyle { get; set; } = 0; // 0 = Padrão, 1 = Rolagem
+    public bool LyricsActive { get; set; } = false;
 
     private static readonly object SaveLock = new();
 

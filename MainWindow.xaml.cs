@@ -18,9 +18,6 @@ public partial class MainWindow : Window
     private const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
     private const string RunValueName = "SpotifyTaskbarWidget";
 
-    // Link de donativos; vazio = item de menu oculto
-    private const string DonateUrl = "https://ko-fi.com/mechanicwb2";
-
     // Ícones do Spotify (paths 16x16 do leitor web)
     private static readonly Geometry PlayGeo = Geometry.Parse("M3 1.713a.7.7 0 0 1 1.05-.607l10.89 6.288a.7.7 0 0 1 0 1.212L4.05 14.894A.7.7 0 0 1 3 14.288V1.713z");
     private static readonly Geometry PauseGeo = Geometry.Parse("M2.7 1a.7.7 0 0 0-.7.7v12.6a.7.7 0 0 0 .7.7h2.6a.7.7 0 0 0 .7-.7V1.7a.7.7 0 0 0-.7-.7H2.7zm8 0a.7.7 0 0 0-.7.7v12.6a.7.7 0 0 0 .7.7h2.6a.7.7 0 0 0 .7-.7V1.7a.7.7 0 0 0-.7-.7h-2.6z");
@@ -37,6 +34,10 @@ public partial class MainWindow : Window
     private readonly MediaService _media = new();
     private readonly SpotifyUiaService _uia = new();
     private readonly WidgetSettings _settings = WidgetSettings.Shared;
+    private readonly LyricsService _lyricsService = new();
+    private List<LyricLine>? _currentLyrics;
+    private string _currentTrackName = "";
+    private string _currentArtistName = "";
     private bool? _liked;
 
     /// <summary>Barra desta janela (0 = principal, 1+ = secundárias). Cada
@@ -182,13 +183,14 @@ public partial class MainWindow : Window
         BtnRepeatMenu.Header = L.BtnRepeat;
         BtnVolumeMenu.Header = L.BtnVolume;
         ProgressMenu.Header = L.ProgressBar;
+        LyricsMenu.Header = L.BtnLyrics;
+        LyricsStyleMenu.Header = L.LyricsStyle;
+        LyricsStyleDefault.Header = L.LyricsStyle1Line;
+        LyricsStyleScroll.Header = L.LyricsStyle2Lines;
         LauncherMenu.Header = L.ShowLauncher;
         LauncherMenu.ToolTip = L.ShowLauncherTip;
         AutoStartMenu.Header = L.AutoStart;
         OpenSpotifyMenu.Header = L.OpenSpotify;
-        UpdateMenu.Header = L.CheckUpdates;
-        DonateMenu.Header = L.Donate;
-        DonateMenu.Visibility = DonateUrl.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
         ExitMenu.Header = L.Exit;
 
         PrevButton.ToolTip = L.TipPrev;
@@ -198,6 +200,7 @@ public partial class MainWindow : Window
         RepeatButton.ToolTip = L.TipRepeat;
         ShuffleButton.ToolTip = L.TipShuffle;
         LikeButton.ToolTip = L.TipLikeAdd;
+        LyricsToggleButton.ToolTip = L.TipLyrics;
         LauncherPanel.ToolTip = L.TipOpenSpotify;
         LauncherText.Text = L.OpenSpotify;
         ArtistText.Text = L.NothingPlaying;
@@ -211,7 +214,6 @@ public partial class MainWindow : Window
         ApplyLanguage();
         if (PackagedApp.IsPackaged)
         {
-            UpdateMenu.Visibility = Visibility.Collapsed; // a Store trata das atualizações
             _ = InitStartupTaskStateAsync();
         }
         else
@@ -277,6 +279,7 @@ public partial class MainWindow : Window
         {
             UpdatePosition();
             UpdateProgressUi();
+            UpdateLyricsText();
             ApplyThemeIfChanged();
         };
         _positionTimer.Start();
@@ -306,11 +309,6 @@ public partial class MainWindow : Window
 
         var mediaInit = _media.InitializeAsync();
 
-        if (!PackagedApp.IsPackaged && !_updateCheckStarted)
-        {
-            _updateCheckStarted = true; // com várias janelas, só uma verifica
-            _ = CheckUpdatesQuietlyAsync();
-        }
 
         await mediaInit;
         if (_closed)
@@ -324,17 +322,23 @@ public partial class MainWindow : Window
     {
         LauncherMenu.IsChecked = _settings.ShowLauncher;
         ProgressMenu.IsChecked = _settings.ShowProgress;
-        ScrollTitleOnceMenu.IsChecked = _settings.ScrollTitleOnce;
         BtnLikeMenu.IsChecked = _settings.ShowLike;
         BtnShuffleMenu.IsChecked = _settings.ShowShuffle;
         BtnPrevMenu.IsChecked = _settings.ShowPrev;
         BtnNextMenu.IsChecked = _settings.ShowNext;
         BtnRepeatMenu.IsChecked = _settings.ShowRepeat;
         BtnVolumeMenu.IsChecked = _settings.ShowVolume;
+        LyricsMenu.IsChecked = _settings.ShowLyrics;
+        LyricsStyleDefault.IsChecked = _settings.LyricsStyle == 0;
+        LyricsStyleScroll.IsChecked = _settings.LyricsStyle == 1;
+
+        LyricsToggleButton.Visibility = _settings.ShowLyrics ? Visibility.Visible : Visibility.Collapsed;
+
         ApplyScale();
         UpdateSizeChecks();
         ApplyOpacity();
         UpdateOpacityChecks();
+        ApplyLyricsVisibility();
     }
 
     private void OnSettingsChanged()
@@ -1002,6 +1006,10 @@ public partial class MainWindow : Window
                 ArtImage.Visibility = Visibility.Collapsed;
                 ArtPlaceholder.Visibility = Visibility.Visible;
                 _lastTrackKey = "";
+                _currentTrackName = "";
+                _currentArtistName = "";
+                _currentLyrics = null;
+                UpdateLyricsText();
                 UpdateMarquee();
                 return;
             }
@@ -1010,6 +1018,15 @@ public partial class MainWindow : Window
             ArtistText.Text = track.Artist;
             UpdateMarquee();
             SetPlayPauseIcon(_isPlayingUi);
+
+            if (_currentTrackName != track.Title || _currentArtistName != track.Artist)
+            {
+                _currentTrackName = track.Title;
+                _currentArtistName = track.Artist;
+                _currentLyrics = null;
+                UpdateLyricsText();
+                _ = FetchLyricsAsync(_currentTrackName, _currentArtistName);
+            }
 
             // Estado real (favoritos + aleatório + repetição) da árvore de
             // acessibilidade do Spotify; o SMTC serve de rede de segurança.
@@ -1528,13 +1545,7 @@ public partial class MainWindow : Window
         UpdateProgressUi();
     }
 
-    private void ScrollTitleOnce_MenuClick(object sender, RoutedEventArgs e)
-    {
-        _settings.ScrollTitleOnce = ScrollTitleOnceMenu.IsChecked;
-        _settings.Save();
-        _marqueeKey = ""; // força novo cálculo
-        UpdateMarquee();
-    }
+
 
     private void VolumePopup_Closed(object sender, EventArgs e)
     {
@@ -1554,6 +1565,7 @@ public partial class MainWindow : Window
     private void Root_ContextMenuOpening(object sender, ContextMenuEventArgs e)
     {
         CaptureForeground();
+        Interop.SetForegroundWindow(_hwnd); // Fix: o WPF não fecha o menu se a janela não tiver foco
         RebuildMonitorMenu();
         // Estado global — outra janela (ou o Gestor de Tarefas) pode tê-lo mudado
         if (!PackagedApp.IsPackaged)
@@ -1688,8 +1700,13 @@ public partial class MainWindow : Window
         else if (_pressed)
         {
             _pressed = false;
-            SpotifyActions.OpenSpotifyWindow();
         }
+    }
+
+    private void Art_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        SpotifyActions.OpenSpotifyWindow();
+        e.Handled = true;
     }
 
     // ---------- Menu de contexto ----------
@@ -1800,6 +1817,163 @@ public partial class MainWindow : Window
         UpdatePosition();
     }
 
+    private void LyricsToggle_Click(object sender, RoutedEventArgs e)
+    {
+        _settings.LyricsActive = !_settings.LyricsActive;
+        _settings.Save();
+        ApplyLyricsVisibility();
+        UpdatePosition();
+    }
+
+    private void ApplyLyricsVisibility()
+    {
+        if (_settings.LyricsActive)
+        {
+            LyricsPanel.Visibility = Visibility.Visible;
+            LyricsToggleIcon.Fill = (Brush)new BrushConverter().ConvertFrom("#1ED760");
+            UpdateLyricsText();
+        }
+        else
+        {
+            LyricsPanel.Visibility = Visibility.Collapsed;
+            LyricsToggleIcon.Fill = (Brush)new BrushConverter().ConvertFrom("#B3B3B3");
+        }
+    }
+
+    private async Task FetchLyricsAsync(string title, string artist)
+    {
+        var lyrics = await _lyricsService.GetLyricsAsync(title, artist);
+        if (_currentTrackName == title && _currentArtistName == artist)
+        {
+            _currentLyrics = lyrics ?? new List<LyricLine>();
+            _currentLyricIndex = -1;
+            UpdateLyricsText();
+        }
+    }
+
+    private int _currentLyricIndex = -1;
+
+    private void UpdateLyricsText()
+    {
+        if (!_settings.LyricsActive) return;
+
+        if (!_spotifyPresent || string.IsNullOrWhiteSpace(_currentTrackName))
+        {
+            LyricsText.Text = L.NothingPlaying;
+            LyricsTextNext.Visibility = Visibility.Collapsed;
+            _currentLyricIndex = -1;
+            return;
+        }
+
+        if (_currentLyrics == null || _currentLyrics.Count == 0)
+        {
+            LyricsText.Text = "";
+            LyricsTextNext.Visibility = Visibility.Collapsed;
+            _currentLyricIndex = -1;
+            return;
+        }
+
+        TimeSpan currentPos = _isPlayingUi ? _basePosition + (DateTime.UtcNow - _basePositionAt) : _basePosition;
+        
+        int newIndex = -1;
+        for (int i = 0; i < _currentLyrics.Count; i++)
+        {
+            if (currentPos >= _currentLyrics[i].Time) newIndex = i;
+            else break;
+        }
+
+        if (newIndex == -1)
+        {
+            if (_currentLyricIndex != -1 || LyricsText.Text != "♪")
+            {
+                LyricsText.Text = "♪";
+                LyricsTextNext.Visibility = Visibility.Collapsed;
+                LyricsScrollTransform.BeginAnimation(TranslateTransform.YProperty, null);
+                LyricsScrollTransform.Y = 0;
+                LyricsText.BeginAnimation(UIElement.OpacityProperty, null);
+                LyricsText.Opacity = 1.0;
+                _currentLyricIndex = -1;
+            }
+            return;
+        }
+
+        if (newIndex != _currentLyricIndex)
+        {
+            bool animate = _settings.LyricsStyle == 1 && newIndex == _currentLyricIndex + 1 && _currentLyricIndex != -1;
+            _currentLyricIndex = newIndex;
+            
+            string currentLine = newIndex >= 0 && !string.IsNullOrWhiteSpace(_currentLyrics[newIndex].Text) 
+                ? _currentLyrics[newIndex].Text : "♪";
+            
+            string nextLine = "";
+            if (_settings.LyricsStyle == 1 && newIndex >= 0)
+            {
+                for (int i = newIndex + 1; i < _currentLyrics.Count; i++)
+                {
+                    if (!string.IsNullOrWhiteSpace(_currentLyrics[i].Text))
+                    {
+                        nextLine = _currentLyrics[i].Text;
+                        break;
+                    }
+                }
+            }
+
+            if (_settings.LyricsStyle == 1)
+            {
+                LyricsScrollPanel.VerticalAlignment = VerticalAlignment.Top;
+                LyricsText.TextAlignment = TextAlignment.Center;
+                LyricsText.HorizontalAlignment = HorizontalAlignment.Center;
+                LyricsTextNext.TextAlignment = TextAlignment.Center;
+                LyricsTextNext.HorizontalAlignment = HorizontalAlignment.Center;
+                
+                LyricsTextNext.Visibility = string.IsNullOrEmpty(nextLine) ? Visibility.Collapsed : Visibility.Visible;
+                
+                if (animate)
+                {
+                    double oldHeight = LyricsText.ActualHeight > 0 ? LyricsText.ActualHeight : 20;
+                    LyricsText.Text = currentLine;
+                    LyricsTextNext.Text = nextLine;
+                    
+                    var yAnim = new DoubleAnimation(oldHeight, 0, TimeSpan.FromMilliseconds(400)) { EasingFunction = new CircleEase { EasingMode = EasingMode.EaseOut } };
+                    LyricsScrollTransform.BeginAnimation(TranslateTransform.YProperty, yAnim);
+                    
+                    var opAnim1 = new DoubleAnimation(0.533, 1.0, TimeSpan.FromMilliseconds(400));
+                    LyricsText.BeginAnimation(UIElement.OpacityProperty, opAnim1);
+                    
+                    if (!string.IsNullOrEmpty(nextLine))
+                    {
+                        var opAnim2 = new DoubleAnimation(0.0, 0.533, TimeSpan.FromMilliseconds(400));
+                        LyricsTextNext.BeginAnimation(UIElement.OpacityProperty, opAnim2);
+                    }
+                }
+                else
+                {
+                    LyricsText.Text = currentLine;
+                    LyricsTextNext.Text = nextLine;
+                    LyricsScrollTransform.BeginAnimation(TranslateTransform.YProperty, null);
+                    LyricsScrollTransform.Y = 0;
+                    LyricsText.BeginAnimation(UIElement.OpacityProperty, null);
+                    LyricsText.Opacity = 1.0;
+                    LyricsTextNext.BeginAnimation(UIElement.OpacityProperty, null);
+                    LyricsTextNext.Opacity = 0.533;
+                }
+            }
+            else
+            {
+                LyricsScrollPanel.VerticalAlignment = VerticalAlignment.Center;
+                LyricsText.TextAlignment = TextAlignment.Left;
+                LyricsText.HorizontalAlignment = HorizontalAlignment.Left;
+                
+                LyricsText.Text = currentLine;
+                LyricsTextNext.Visibility = Visibility.Collapsed;
+                LyricsScrollTransform.BeginAnimation(TranslateTransform.YProperty, null);
+                LyricsScrollTransform.Y = 0;
+                LyricsText.BeginAnimation(UIElement.OpacityProperty, null);
+                LyricsText.Opacity = 1.0;
+            }
+        }
+    }
+
     private void Buttons_Click(object sender, RoutedEventArgs e)
     {
         _settings.ShowLike = BtnLikeMenu.IsChecked;
@@ -1808,8 +1982,21 @@ public partial class MainWindow : Window
         _settings.ShowNext = BtnNextMenu.IsChecked;
         _settings.ShowRepeat = BtnRepeatMenu.IsChecked;
         _settings.ShowVolume = BtnVolumeMenu.IsChecked;
+        _settings.ShowLyrics = LyricsMenu.IsChecked;
         _settings.Save();
         UpdatePosition();
+    }
+
+    private void LyricsStyle_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender == LyricsStyleDefault)
+            _settings.LyricsStyle = 0;
+        else if (sender == LyricsStyleScroll)
+            _settings.LyricsStyle = 1;
+
+        _settings.Save();
+        _currentLyricIndex = -1;
+        UpdateLyricsText();
     }
 
     private const string StartupTaskId = "SpotifyTaskbarWidgetStartup";
@@ -1872,62 +2059,7 @@ public partial class MainWindow : Window
 
     private void OpenSpotify_Click(object sender, RoutedEventArgs e) => SpotifyActions.OpenSpotifyWindow();
 
-    private void Donate_Click(object sender, RoutedEventArgs e)
-    {
-        try
-        {
-            Process.Start(new ProcessStartInfo(DonateUrl) { UseShellExecute = true });
-        }
-        catch { }
-    }
 
-    private async void Update_Click(object sender, RoutedEventArgs e)
-    {
-        if (!UpdateService.IsConfigured)
-        {
-            MessageBox.Show(L.UpdateNotConfigured(UpdateService.CurrentVersion), L.AppTitle);
-            return;
-        }
-
-        UpdateMenu.IsEnabled = false;
-        try
-        {
-            var update = await UpdateService.CheckAsync();
-            if (update == null)
-            {
-                MessageBox.Show(L.UpdateLatest(UpdateService.CurrentVersion), L.AppTitle);
-                return;
-            }
-
-            var answer = MessageBox.Show(
-                L.UpdatePrompt(update.Value.Version, UpdateService.CurrentVersion),
-                L.AppTitle, MessageBoxButton.YesNo);
-            if (answer == MessageBoxResult.Yes)
-                await UpdateService.DownloadAndApplyAsync(update.Value.Url);
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show(L.UpdateError(ex.Message), L.AppTitle);
-        }
-        finally
-        {
-            UpdateMenu.IsEnabled = true;
-        }
-    }
-
-    /// <summary>Verificação silenciosa ao arrancar: se houver update, realça o item do menu.</summary>
-    private async Task CheckUpdatesQuietlyAsync()
-    {
-        try
-        {
-            await Task.Delay(TimeSpan.FromSeconds(20));
-            var update = await UpdateService.CheckAsync();
-            if (update != null)
-                await Dispatcher.InvokeAsync(() =>
-                    UpdateMenu.Header = L.UpdateAvailable(update.Value.Version));
-        }
-        catch { }
-    }
 
     private void Exit_Click(object sender, RoutedEventArgs e)
     {

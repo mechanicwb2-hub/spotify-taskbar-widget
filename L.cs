@@ -42,6 +42,10 @@ internal static class L
     public static string ShowLauncherTip => Pt
         ? "Com o Spotify fechado, mostra um botão para o abrir em vez de esconder o widget"
         : "When Spotify is closed, show a button to open it instead of hiding the widget";
+    public static string BtnLyrics => Pt ? "Letras" : "Lyrics";
+    public static string LyricsStyle => Pt ? "Estilo Letra" : "Lyrics Style";
+    public static string LyricsStyle1Line => Pt ? "1 Linha" : "1 Line";
+    public static string LyricsStyle2Lines => Pt ? "2 Linhas" : "2 Lines";
     public static string AutoStart => Pt ? "Iniciar com o Windows" : "Start with Windows";
     public static string OpenSpotify => Pt ? "Abrir Spotify" : "Open Spotify";
     public static string CheckUpdates => Pt ? "Procurar atualizações" : "Check for updates";
@@ -59,7 +63,8 @@ internal static class L
     public static string TipShuffleSmart => Pt ? "Modo aleatório inteligente ativo" : "Smart Shuffle on";
     public static string TipLikeAdd => Pt ? "Adicionar aos favoritos do Spotify" : "Add to your Spotify favorites";
     public static string TipLiked => Pt ? "Já está nos favoritos" : "Already in your favorites";
-    public static string NothingPlaying => Pt ? "nada a tocar" : "nothing playing";
+    public static string TipLyrics => Pt ? "Mostrar/Ocultar Letras" : "Toggle Lyrics";
+    public static string NothingPlaying => "";
     public static string TipOpenSpotify => Pt ? "Abrir o Spotify" : "Open Spotify";
 
     // Atualizações
